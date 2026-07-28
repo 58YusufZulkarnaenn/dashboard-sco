@@ -5,7 +5,7 @@ import altair as alt
 # Setting tampilan web
 st.set_page_config(page_title="Dashboard SCO", page_icon="📦", layout="wide")
 
-st.title("📊 Dashboard Performa Pengiriman SCO (Ultimate V2)")
+st.title("📊 Dashboard Performa Pengiriman SCO (By Yusuf Zulkarnaen)")
 st.markdown("Rekapitulasi lengkap data operasional, performa tim, dan insight pelanggan.")
 st.markdown("---")
 
