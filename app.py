@@ -101,15 +101,39 @@ if len(list_file_excel) == 0:
     st.error("Waduh, belum ada file Excel yang terdeteksi nih bro. Upload dulu ke GitHub ya!")
     st.stop()
 
-selected_file = st.sidebar.selectbox("📂 Pilih File Periode:", list_file_excel)
-st.sidebar.success(f"File aktif:\n**{selected_file}**")
+# UBAH 1: Dari Selectbox jadi Multiselect (Bisa pilih lebih dari 1 file)
+selected_files = st.sidebar.multiselect(
+    "📂 Pilih File Periode (Bisa >1):", 
+    options=list_file_excel,
+    default=list_file_excel # Defaultnya otomatis nampilin semua file yg ada
+)
 
+if not selected_files:
+    st.sidebar.warning("Pilih minimal 1 file dulu bro!")
+    st.stop()
+
+st.sidebar.success(f"Menampilkan {len(selected_files)} file aktif.")
+
+# UBAH 2: Fungsi load_data disesuaikan buat baca banyak file sekaligus
 @st.cache_data
-def load_data(file_path):
-    xls = pd.ExcelFile(file_path)
-    df_raw = pd.read_excel(xls, "Raw Data")
-    df_rata2 = pd.read_excel(xls, "Rata-Rata Hari Masuk")
-    return df_raw, df_rata2
+def load_data(file_paths):
+    all_raw = []
+    all_rata2 = []
+    for f in file_paths:
+        try:
+            xls = pd.ExcelFile(f)
+            df_raw = pd.read_excel(xls, "Raw Data")
+            all_raw.append(df_raw)
+            
+            df_rata2 = pd.read_excel(xls, "Rata-Rata Hari Masuk")
+            all_rata2.append(df_rata2)
+        except Exception as e:
+            pass
+            
+    df_gabung_raw = pd.concat(all_raw, ignore_index=True) if all_raw else pd.DataFrame()
+    df_gabung_rata2 = pd.concat(all_rata2, ignore_index=True) if all_rata2 else pd.DataFrame()
+    
+    return df_gabung_raw, df_gabung_rata2
 
 @st.cache_data
 def load_all_data(file_list):
@@ -129,9 +153,9 @@ def format_rupiah(val):
     return f"Rp {val:,.0f}".replace(",", ".")
 
 try:
-    # Load data mentah
-    df_raw, df_rata2_raw = load_data(selected_file)
-    df_all = load_all_data(list_file_excel)
+    # Load data mentah (Tuple dipakai biar Streamlit cache gak error baca list)
+    df_raw, df_rata2_raw = load_data(tuple(selected_files))
+    df_all = load_all_data(tuple(list_file_excel))
     
     df = df_raw.copy()
     df_rata2 = df_rata2_raw.copy()
@@ -221,7 +245,6 @@ try:
         
         sco_aktif = df_filtered['User id'].nunique()
         
-        # Cari layanan & payment top dengan aman
         layanan_modes = df_filtered['Services'].mode()
         layanan_top = layanan_modes[0] if not layanan_modes.empty else "-"
         
@@ -325,14 +348,25 @@ try:
         else:
             df_rata2_clean = df_rata2.loc[:, ~df_rata2.columns.str.contains('^Unnamed')].copy()
             
-            for col in ['Revenue', 'Rata_Pendapatan_Per_Hari']:
+            # Ubah ke numerik dulu sebelum diagregasi
+            for col in ['Revenue', 'Rata_Pendapatan_Per_Hari', 'Hari_Masuk', 'Rata_Transaksi_Per_Hari']:
                 if col in df_rata2_clean.columns:
                     df_rata2_clean[col] = pd.to_numeric(df_rata2_clean[col], errors='coerce').fillna(0)
+            
+            # UBAH 3: Agregasi biar SCO yang muncul di >1 file Excel datanya dirata-ratakan jadi 1 baris
+            df_rata2_clean = df_rata2_clean.groupby('User id', as_index=False).mean(numeric_only=True)
+            
+            # Baru di-format setelah di-group
+            for col in ['Revenue', 'Rata_Pendapatan_Per_Hari']:
+                if col in df_rata2_clean.columns:
                     df_rata2_clean[f"{col}_Num"] = df_rata2_clean[col] 
                     df_rata2_clean[col] = df_rata2_clean[col].apply(format_rupiah)
                     
             if 'Rata_Transaksi_Per_Hari' in df_rata2_clean.columns:
-                df_rata2_clean['Rata_Transaksi_Per_Hari'] = pd.to_numeric(df_rata2_clean['Rata_Transaksi_Per_Hari'], errors='coerce').fillna(0).round(1)
+                df_rata2_clean['Rata_Transaksi_Per_Hari'] = df_rata2_clean['Rata_Transaksi_Per_Hari'].round(1)
+                
+            if 'Hari_Masuk' in df_rata2_clean.columns:
+                df_rata2_clean['Hari_Masuk'] = df_rata2_clean['Hari_Masuk'].round(0).astype(int)
 
             if 'Rata_Pendapatan_Per_Hari_Num' in df_rata2_clean.columns:
                 st.subheader("📊 Rata-Rata Pendapatan Harian Tiap Kasir")
