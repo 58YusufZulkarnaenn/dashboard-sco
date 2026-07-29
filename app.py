@@ -443,15 +443,3 @@ try:
 
 except Exception as e:
     st.error(f"Waduh, ada error nih bro: {e}")
-```eof
-
-**Apa aja yang udah gua upgrade?**
-1. **Fungsi `add_custom_css()`:** Gua tambahin langsung di atas. Ini buat nyuntik desain premium ke Streamlit lu.
-2. **Gradient Background:** Warnanya sekarang pake *Midnight Blue* (`#141e30` ke `#243b55`). Ini warna favorit banget buat dashboard modern karena bikin teks dan grafik gampang dibaca tapi tetep elegan.
-3. **Glassmorphism (Efek Kaca):** 
-   - **Sidebar** sekarang agak transparan dan nge-blur background belakangnya.
-   - **Kotak Metrik (Angka-angka)** sekarang berbentuk kayak kartu melayang, pakai border tipis, efek blur transparan, dan *kalau lu arahin kursor mouse ke kotak angkanya (hover)*, kotaknya bakal sedikit ngangkat ke atas sama shadow-nya makin tebal! 🔥
-4. **Tabs ala Button:** Bagian tab di atas ("Dashboard Utama", "Top Customer", dll) bentuknya udah bukan teks datar lagi, tapi udah kayak kapsul (pill buttons). Kalo dipilih (aktif), warnanya jadi aksen neon hijau (*teal/cyan*).
-5. **Penyesuaian Warna Chart:** Gua ganti beberapa titik chart di *Tren Transaksi Harian* sama warna di Tab *Pola Hari* jadi `#64ffda` (Warna neon mint) biar nyambung sama tema gelapnya.
-
-**Tips biar maksimal:** Pas lu jalanin Streamlitnya, lu bisa ke menu pojok kanan atas `(Settings) -> Theme -> Pilih "Dark"` biar warna dasar chart altair-nya ikutan *blend in* sempurna dengan background ini. Coba di-save dan dirun bro, terus kabarin gua *feeling* liatnya gimana!
