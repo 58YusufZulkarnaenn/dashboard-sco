@@ -3,6 +3,8 @@ import pandas as pd
 import altair as alt
 import glob
 import os
+import base64
+from header_photo_data import HEADER_PHOTO_B64
 
 # ==========================================
 # 1. SETTING HALAMAN & INJEKSI CSS PREMIUM
@@ -226,8 +228,10 @@ def clean_destination(dest, kpi_type):
 def load_unified_data(file_list):
     all_raw = []
     all_rata2 = []
-    
+    load_errors = []  # POLISH: nampung nama file & pesan error, biar gak silent-fail lagi
+
     for f in file_list:
+        fname_for_error = f.name if hasattr(f, 'name') else os.path.basename(str(f))
         try:
             if hasattr(f, 'name'):
                 filename = f.name.lower()
@@ -260,7 +264,16 @@ def load_unified_data(file_list):
                 df_std['Revenue'] = pd.to_numeric(df[col_rev], errors='coerce').fillna(0)
                 
                 df_std['Weight'] = pd.to_numeric(df['Weight'] if 'Weight' in df.columns else 0, errors='coerce').fillna(0)
-                
+
+                # NEW: Qty (jumlah koli/paket per resi) — dipakai buat insight efisiensi
+                df_std['Qty'] = pd.to_numeric(df['Qty'] if 'Qty' in df.columns else 1, errors='coerce').fillna(1)
+
+                # NEW: Insurance (nilai premi asuransi per resi) — cuma ada di data Cash
+                if 'Insurance' in df.columns:
+                    df_std['Insurance'] = pd.to_numeric(df['Insurance'], errors='coerce').fillna(0)
+                else:
+                    df_std['Insurance'] = 0.0
+
                 col_srv = 'Service' if 'Service' in df.columns else ('Services' if 'Services' in df.columns else None)
                 df_std['Service'] = df[col_srv] if col_srv else "-"
                 
@@ -281,14 +294,16 @@ def load_unified_data(file_list):
             if kpi_type == "Cash" and "Rata-Rata Hari Masuk" in xls.sheet_names:
                 df_r = pd.read_excel(xls, "Rata-Rata Hari Masuk")
                 all_rata2.append(df_r)
-                
+
         except Exception as e:
-            pass
-            
+            # FIX: dulu di-"except...pass" doang, jadi kalau ada file korup/format beda
+            # datanya ke-skip diam-diam tanpa ketahuan. Sekarang errornya dicatat & bisa ditampilkan.
+            load_errors.append(f"{fname_for_error}: {e}")
+
     df_master = pd.concat(all_raw, ignore_index=True) if all_raw else pd.DataFrame()
     df_rata2_master = pd.concat(all_rata2, ignore_index=True) if all_rata2 else pd.DataFrame()
-    
-    return df_master, df_rata2_master
+
+    return df_master, df_rata2_master, load_errors
 
 def format_rupiah(val):
     return f"Rp {val:,.0f}".replace(",", ".")
@@ -327,10 +342,17 @@ if not active_files:
     st.error("⚠️ Data server kosong dan belum ada file yang di-upload.")
     st.stop()
 
-df_global, _ = load_unified_data(active_files)
+df_global, _, global_load_errors = load_unified_data(active_files)
 if df_global.empty:
     st.error("Gagal membaca data. Pastikan sheet 'Raw Data' ada di dalam file.")
     st.stop()
+
+# FIX: kalau ada file yang gagal ke-parse, sekarang ketauan lewat warning di sidebar
+# (dulu di-skip diam-diam, sekarang minimal user tau file mana yang bermasalah)
+if global_load_errors:
+    with st.sidebar.expander(f"⚠️ {len(global_load_errors)} file gagal dibaca", expanded=False):
+        for err in global_load_errors:
+            st.caption(f"❌ {err}")
 
 st.sidebar.markdown("---")
 st.sidebar.header("🔍 Filter Analytics")
@@ -355,7 +377,7 @@ if not list_file_kpi:
 # Langsung Bypass Filter
 selected_files = list_file_kpi
 
-df_active, df_rata2_active = load_unified_data(selected_files)
+df_active, df_rata2_active, _ = load_unified_data(selected_files)
 
 # --- SABUK PENGAMAN (FIX ERROR) ---
 if df_active.empty:
@@ -396,8 +418,20 @@ st.sidebar.download_button(label=f"Download Rekap {selected_kpi} (CSV)", data=cs
 # ==========================================
 # TAMPILAN DASHBOARD
 # ==========================================
-st.title("📊 Dashboard Enterprise KP Grand Taruma")
-st.markdown("<p style='color:#a8b2d1 !important; font-size:1.2rem; font-weight: 600;'>(By Yusuf Zulkarnaen)</p>", unsafe_allow_html=True)
+# NEW: Header personal dengan foto SCO (avatar bulat) di samping judul
+st.markdown(f"""
+<div style="display:flex; align-items:center; gap:22px; margin-bottom:4px;">
+    <img src="data:image/jpeg;base64,{HEADER_PHOTO_B64}"
+         style="width:84px; height:84px; border-radius:50%; object-fit:cover;
+                border:3px solid rgba(100,255,218,0.55);
+                box-shadow:0 8px 24px rgba(0,0,0,0.35), 0 0 20px rgba(100,255,218,0.15);
+                flex-shrink:0;">
+    <div>
+        <div style="font-size:2rem; font-weight:800; color:#ffffff; line-height:1.15;">📊 Dashboard Enterprise KP Grand Taruma</div>
+        <div style="color:#a8b2d1; font-size:1.1rem; font-weight:600;">By Yusuf Zulkarnaen</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 st.markdown(f"Sedang menampilkan analitik untuk pilar: <b style='color:#64ffda;'>{selected_kpi.upper()}</b>", unsafe_allow_html=True)
 st.markdown("---")
 
@@ -461,7 +495,29 @@ with tab1:
     c6.metric("👥 SCO AKTIF", f"{sco_aktif} Orang")
     c7.metric("🚚 LAYANAN TERLARIS", srv_top)
     c8.metric("💳 METODE FAVORIT", pay_top)
-    
+
+    # NEW: Insight efisiensi berbasis Weight & Qty, + ringkasan Asuransi (khusus Cash)
+    st.markdown("<br>", unsafe_allow_html=True)
+    total_qty = df_filtered['Qty'].sum()
+    rev_per_kg = (total_rev / total_berat) if total_berat > 0 else 0
+    avg_qty_per_resi = (total_qty / total_resi) if total_resi > 0 else 0
+    total_insurance_val = df_filtered['Insurance'].sum() if 'Insurance' in df_filtered.columns else 0
+    ada_asuransi = selected_kpi == "Cash" and total_insurance_val > 0
+
+    if ada_asuransi:
+        c9, c10, c11, c12 = st.columns(4)
+    else:
+        c9, c10 = st.columns(2)
+
+    c9.metric("⚡ REVENUE / KG", format_rupiah(rev_per_kg), help="Total Revenue dibagi Total Berat — indikator efisiensi harga per kg.")
+    c10.metric("📦 RATA-RATA QTY / RESI", f"{avg_qty_per_resi:,.2f}")
+
+    if ada_asuransi:
+        resi_berasuransi = (df_filtered['Insurance'] > 0).sum()
+        pct_berasuransi = (resi_berasuransi / total_resi * 100) if total_resi > 0 else 0
+        c11.metric("🛡️ TRANSAKSI BERASURANSI", f"{pct_berasuransi:,.1f}%", delta=f"{resi_berasuransi} dari {total_resi} Resi")
+        c12.metric("💰 TOTAL PREMI ASURANSI", format_rupiah(total_insurance_val))
+
     st.markdown("---")
     kiri, kanan = st.columns(2)
     with kiri:
@@ -515,6 +571,31 @@ with tab2:
     if df_cust.empty:
         st.info("Tidak ada data Customer (Shipper Name) di rentang waktu/SCO ini.")
     else:
+        # NEW: insight box konsentrasi customer (deteksi risiko ketergantungan ke 1 customer besar)
+        cust_rev_rank = df_cust.groupby('Customer')['Revenue'].sum().sort_values(ascending=False)
+        n_unique_cust = df_cust['Customer'].nunique()
+        top1_cust = cust_rev_rank.index[0]
+        top1_cust_rev = cust_rev_rank.iloc[0]
+        total_cust_rev = cust_rev_rank.sum()
+        share_top1 = (top1_cust_rev / total_cust_rev * 100) if total_cust_rev > 0 else 0
+
+        if share_top1 >= 30:
+            st.markdown(f"""
+            <div class="insight-box insight-warning">
+                <b>⚠️ Automated Insight:</b> Dari <b>{n_unique_cust} customer unik</b>, <b>{top1_cust}</b> menyumbang <b>{share_top1:,.1f}%</b>
+                dari total revenue customer (<b>{format_rupiah(top1_cust_rev)}</b>). Konsentrasi sebesar ini berarti revenue cukup bergantung
+                pada satu customer besar — perlu strategi retensi khusus supaya order-nya gak hilang.
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="insight-box">
+                <b>💡 Automated Insight:</b> Dari <b>{n_unique_cust} customer unik</b>, customer teratas <b>{top1_cust}</b> berkontribusi
+                <b>{share_top1:,.1f}%</b> dari total revenue customer (<b>{format_rupiah(top1_cust_rev)}</b>). Distribusi revenue relatif
+                merata, tidak bergantung pada satu customer saja.
+            </div>
+            """, unsafe_allow_html=True)
+
         col_rev, col_con = st.columns(2)
         with col_rev:
             st.subheader("🥇 Top 10 Customer (By Revenue)")
@@ -607,11 +688,80 @@ with tab3:
         # POLISH: highlight baris juara (rank 1)
         st.dataframe(style_top_row(tabel_sco), use_container_width=True)
 
+        # FIX/NEW: dulu analisis "produktivitas per hari kerja" cuma ada utk KPI Cash (dari sheet
+        # 'Rata-Rata Hari Masuk'). Sekarang dihitung langsung dari Raw Data biar KPI lain (mis. Cashless)
+        # juga dapat insight yang setara, tanpa perlu sheet tambahan.
+        st.markdown("---")
+        st.subheader(f"📊 Produktivitas Harian SCO ({selected_kpi})")
+        prod_sco = df_filtered.groupby('SCO').agg(Total_Connote=('Revenue', 'count'), Total_Revenue=('Revenue', 'sum'), Hari_Masuk=('Date_Only', 'nunique')).reset_index()
+        prod_sco['Rata_Transaksi_Per_Hari'] = (prod_sco['Total_Connote'] / prod_sco['Hari_Masuk']).round(1)
+        prod_sco['Rata_Pendapatan_Per_Hari'] = (prod_sco['Total_Revenue'] / prod_sco['Hari_Masuk'])
+        prod_sco = prod_sco.sort_values('Rata_Pendapatan_Per_Hari', ascending=False)
+
+        chart_prod = alt.Chart(prod_sco).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
+            x=alt.X('SCO:N', title='SCO', sort='-y'), y=alt.Y('Rata_Pendapatan_Per_Hari:Q', title='Rata-Rata Pendapatan / Hari Kerja (Rp)'),
+            color=alt.Color('SCO:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None),
+            tooltip=['SCO', 'Hari_Masuk', 'Rata_Transaksi_Per_Hari', 'Rata_Pendapatan_Per_Hari']
+        ).properties(height=320)
+        st.altair_chart(chart_prod, use_container_width=True)
+
+        prod_display = prod_sco.copy()
+        prod_display['Total_Revenue'] = prod_display['Total_Revenue'].apply(format_rupiah)
+        prod_display['Rata_Pendapatan_Per_Hari'] = prod_display['Rata_Pendapatan_Per_Hari'].apply(format_rupiah)
+        prod_display.index = range(1, len(prod_display) + 1)
+        st.dataframe(style_top_row(prod_display), use_container_width=True)
+
+    # NEW: Efisiensi Revenue per Kg per SCO — berlaku utk semua KPI, dihitung langsung dari Raw Data
+    st.markdown("---")
+    st.subheader("⚖️ Efisiensi Revenue per Kg (per SCO)")
+    st.markdown("<p style='color:#a8b2d1; font-size:0.9rem;'>Indikator harga rata-rata yang berhasil didapat SCO per kilogram berat kiriman — makin tinggi, makin efisien kualitas order yang digarap.</p>", unsafe_allow_html=True)
+    eff_sco = df_filtered.groupby('SCO', as_index=False).agg(Total_Revenue=('Revenue', 'sum'), Total_Berat=('Weight', 'sum'), Total_Resi=('Revenue', 'count'))
+    eff_sco = eff_sco[eff_sco['Total_Berat'] > 0].copy()
+    if not eff_sco.empty:
+        eff_sco['Revenue_per_Kg'] = eff_sco['Total_Revenue'] / eff_sco['Total_Berat']
+        eff_sco = eff_sco.sort_values('Revenue_per_Kg', ascending=False)
+        chart_eff = alt.Chart(eff_sco).mark_bar(size=45, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
+            x=alt.X('SCO:N', title='Nama SCO', sort='-y'),
+            y=alt.Y('Revenue_per_Kg:Q', title='Revenue per Kg (Rp)'),
+            color=alt.Color('SCO:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None),
+            tooltip=['SCO', 'Total_Resi', 'Total_Berat', 'Revenue_per_Kg']
+        ).properties(height=320)
+        st.altair_chart(chart_eff, use_container_width=True)
+
+        top_eff_sco = eff_sco.iloc[0]['SCO']
+        top_eff_val = eff_sco.iloc[0]['Revenue_per_Kg']
+        st.markdown(f"""
+        <div class="insight-box">
+            <b>💡 Automated Insight:</b> <b>{top_eff_sco}</b> punya efisiensi revenue per kg paling tinggi (<b>{format_rupiah(top_eff_val)}</b>/kg),
+            artinya kualitas order yang digarap paling "berat harga"-nya dibanding total beratnya. SCO lain bisa dibandingkan sebagai acuan kualitas order.
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("Data berat (Weight) tidak tersedia untuk menghitung efisiensi per SCO.")
+
 # ==========================================
 # TAB 4: POLA HARI & JAM SIBUK
 # ==========================================
 with tab4:
     st.header(f"⏰ Jam Operasional ({selected_kpi})")
+
+    # NEW: insight box pola hari & jam sibuk
+    df_filtered_hari = df_filtered.copy()
+    hari_map_ins = {'Monday': 'Senin', 'Tuesday': 'Selasa', 'Wednesday': 'Rabu', 'Thursday': 'Kamis', 'Friday': 'Jumat', 'Saturday': 'Sabtu', 'Sunday': 'Minggu'}
+    df_filtered_hari['Hari_Ins'] = df_filtered_hari['Date'].dt.day_name().map(hari_map_ins)
+    hari_count = df_filtered_hari.groupby('Hari_Ins').size().sort_values(ascending=False)
+    jam_count = df_filtered_hari.groupby(df_filtered_hari['Date'].dt.hour).size().sort_values(ascending=False)
+    if not hari_count.empty and not jam_count.empty:
+        hari_tersibuk = hari_count.index[0]
+        jam_tersibuk = jam_count.index[0]
+        st.markdown(f"""
+        <div class="insight-box">
+            <b>💡 Automated Insight:</b> Hari tersibuk adalah <b>{hari_tersibuk}</b> dengan <b>{hari_count.iloc[0]}</b> transaksi,
+            sedangkan jam tersibuk ada di sekitar pukul <b>{jam_tersibuk:02d}:00</b> dengan <b>{jam_count.iloc[0]}</b> transaksi.
+            Pola ini bisa dipakai buat atur jadwal penjemputan atau shift SCO biar lebih optimal di jam-jam padat.
+        </div>
+        """, unsafe_allow_html=True)
+
     a1, a2 = st.columns(2)
     with a1:
         hari_map = {'Monday': 'Senin', 'Tuesday': 'Selasa', 'Wednesday': 'Rabu', 'Thursday': 'Kamis', 'Friday': 'Jumat', 'Saturday': 'Sabtu', 'Sunday': 'Minggu'}
@@ -640,6 +790,21 @@ with tab4:
 # ==========================================
 with tab5:
     st.header(f"💳 Distribusi Layanan & Metode Pembayaran ({selected_kpi})")
+
+    # NEW: insight box layanan & metode pembayaran terlaris
+    srv_counts = df_filtered['Service'].value_counts()
+    pay_counts = df_filtered['Payment_Method'].value_counts()
+    if not srv_counts.empty and not pay_counts.empty:
+        srv_share = (srv_counts.iloc[0] / srv_counts.sum() * 100)
+        pay_share = (pay_counts.iloc[0] / pay_counts.sum() * 100)
+        st.markdown(f"""
+        <div class="insight-box">
+            <b>💡 Automated Insight:</b> Layanan <b>{srv_counts.index[0]}</b> mendominasi <b>{srv_share:,.1f}%</b> dari seluruh transaksi.
+            Untuk metode pembayaran, <b>{pay_counts.index[0]}</b> jadi favorit dengan pangsa <b>{pay_share:,.1f}%</b>.
+            Kalau salah satu pangsanya di atas 70%, ada baiknya dicek apakah opsi lain kurang dipromosikan ke customer.
+        </div>
+        """, unsafe_allow_html=True)
+
     s1, s2 = st.columns(2)
     with s1:
         st.subheader("🚚 Jenis Layanan")
@@ -659,6 +824,30 @@ with tab5:
         ).properties(height=300)
         st.altair_chart(chart_pay, use_container_width=True)
 
+    # NEW: Ringkasan Asuransi — khusus KPI Cash (kolom Insurance cuma ada di data Cash)
+    if selected_kpi == "Cash" and 'Insurance' in df_filtered.columns and df_filtered['Insurance'].sum() > 0:
+        st.markdown("---")
+        st.subheader("🛡️ Ringkasan Asuransi Pengiriman")
+        total_resi_ins = len(df_filtered)
+        resi_berasuransi_ins = (df_filtered['Insurance'] > 0).sum()
+        pct_ins = (resi_berasuransi_ins / total_resi_ins * 100) if total_resi_ins > 0 else 0
+        total_premi_ins = df_filtered['Insurance'].sum()
+        avg_premi_ins = (total_premi_ins / resi_berasuransi_ins) if resi_berasuransi_ins > 0 else 0
+
+        i1, i2, i3 = st.columns(3)
+        i1.metric("🛡️ % TRANSAKSI BERASURANSI", f"{pct_ins:,.1f}%", delta=f"{resi_berasuransi_ins} dari {total_resi_ins} Resi")
+        i2.metric("💰 TOTAL PREMI ASURANSI", format_rupiah(total_premi_ins))
+        i3.metric("📊 RATA-RATA PREMI / RESI BERASURANSI", format_rupiah(avg_premi_ins))
+
+        ins_by_sco = df_filtered[df_filtered['Insurance'] > 0].groupby('SCO', as_index=False).agg(Total_Premi=('Insurance', 'sum'), Jumlah_Resi=('Insurance', 'count')).sort_values('Total_Premi', ascending=False)
+        if not ins_by_sco.empty:
+            chart_ins = alt.Chart(ins_by_sco).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5, color=BRAND_GOLD).encode(
+                x=alt.X('Total_Premi:Q', title='Total Premi Asuransi (Rp)'),
+                y=alt.Y('SCO:N', sort='-x', title='SCO'),
+                tooltip=['SCO', 'Jumlah_Resi', 'Total_Premi']
+            ).properties(height=250)
+            st.altair_chart(chart_ins, use_container_width=True)
+
 # ==========================================
 # TAB 6: PEMETAAN DESTINASI (3D HEAT-PILLAR)
 # ==========================================
@@ -667,7 +856,20 @@ with tab6:
     df_dest = df_filtered[df_filtered['Destination'] != '-']
     if not df_dest.empty:
         dest_df = df_dest.groupby('Destination', as_index=False).agg({'Revenue': 'sum', 'SCO': 'count'}).rename(columns={'SCO': 'Total Resi'}).sort_values('Total Resi', ascending=False)
-        
+
+        # NEW: insight box destinasi terbanyak
+        top_dest = dest_df.iloc[0]['Destination']
+        top_dest_resi = dest_df.iloc[0]['Total Resi']
+        top_dest_share = (top_dest_resi / dest_df['Total Resi'].sum() * 100)
+        n_dest_unik = dest_df['Destination'].nunique()
+        st.markdown(f"""
+        <div class="insight-box">
+            <b>💡 Automated Insight:</b> Dari <b>{n_dest_unik} wilayah tujuan</b>, <b>{top_dest}</b> jadi destinasi paling ramai dengan
+            <b>{top_dest_resi} resi</b> (<b>{top_dest_share:,.1f}%</b> dari total pengiriman). Wilayah ini layak jadi prioritas
+            untuk efisiensi rute atau penempatan armada.
+        </div>
+        """, unsafe_allow_html=True)
+
         import pydeck as pdk
         CITY_COORDS = {
             'JAKARTA': [-6.2088, 106.8456], 'BEKASI': [-6.2383, 106.9756], 
@@ -693,7 +895,14 @@ with tab6:
         dest_df['lon'] = dest_df['Destination'].apply(lambda x: CITY_COORDS.get(x, [None, None])[1])
         
         map_df = dest_df.dropna(subset=['lat', 'lon']).copy()
-        
+
+        # FIX: dulu wilayah yang gak ada di CITY_COORDS diam-diam ke-drop dari peta tanpa keterangan.
+        # Sekarang user dikasih tau berapa wilayah & berapa resi yang belum bisa dipetakan.
+        unmapped_df = dest_df[dest_df['lat'].isna()]
+        if not unmapped_df.empty:
+            unmapped_resi = unmapped_df['Total Resi'].sum()
+            st.caption(f"ℹ️ {len(unmapped_df)} wilayah ({unmapped_resi} resi) belum ada di kamus koordinat sistem, jadi belum tampil di peta 3D di bawah — tapi tetap terhitung di tabel & chart lainnya. Contoh: {', '.join(unmapped_df['Destination'].head(5).tolist())}")
+
         if not map_df.empty:
             st.subheader("🗺️ Peta 3D Persebaran Logistik")
             st.markdown("<p style='color:#a8b2d1; font-size:0.9rem;'>Warna teal ke emas dan tinggi pilar menandakan tingginya jumlah resi. (Bisa di-zoom, geser, klik kanan tahan untuk memutar 3D)</p>", unsafe_allow_html=True)
@@ -809,6 +1018,63 @@ with tab7:
         tabel_tren.index = range(1, len(tabel_tren) + 1)
         st.dataframe(tabel_tren[['Periode', 'Total Transaksi', 'Total Revenue']], use_container_width=True)
 
+        # ==========================================
+        # NEW: GROWTH MoM (otomatis pakai 2 periode terakhir yang tersedia di data)
+        # ==========================================
+        st.markdown("---")
+        if len(tren_bulan) >= 2:
+            periode_now = tren_bulan.iloc[-1]
+            periode_prev = tren_bulan.iloc[-2]
+
+            st.subheader(f"📈 Growth Month-over-Month: {periode_prev['Periode']} → {periode_now['Periode']}")
+
+            rev_now, rev_prev = periode_now['Total Revenue'], periode_prev['Total Revenue']
+            trx_now, trx_prev = periode_now['Total Transaksi'], periode_prev['Total Transaksi']
+            growth_rev_pct = ((rev_now - rev_prev) / rev_prev * 100) if rev_prev > 0 else 0
+            growth_trx_pct = ((trx_now - trx_prev) / trx_prev * 100) if trx_prev > 0 else 0
+
+            gm1, gm2 = st.columns(2)
+            gm1.metric(f"💰 Revenue {periode_now['Periode']}", format_rupiah(rev_now), delta=f"{growth_rev_pct:+.1f}% vs {periode_prev['Periode']}")
+            gm2.metric(f"📦 Transaksi {periode_now['Periode']}", f"{trx_now} Resi", delta=f"{growth_trx_pct:+.1f}% vs {periode_prev['Periode']}")
+
+            # --- Customer Churn & New Customer Analysis ---
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.subheader("👥 Customer Baru vs Customer Hilang (Churn)")
+            st.markdown(f"<p style='color:#a8b2d1; font-size:0.9rem;'>Membandingkan customer unik yang order di <b>{periode_prev['Periode']}</b> vs <b>{periode_now['Periode']}</b>.</p>", unsafe_allow_html=True)
+
+            df_cust_period = df_kpi_only[df_kpi_only['Customer'] != '-']
+            cust_prev = set(df_cust_period[df_cust_period['Sort_Bulan'] == periode_prev['Sort_Bulan']]['Customer'].unique())
+            cust_now = set(df_cust_period[df_cust_period['Sort_Bulan'] == periode_now['Sort_Bulan']]['Customer'].unique())
+
+            cust_churned = cust_prev - cust_now
+            cust_new = cust_now - cust_prev
+            cust_retained = cust_prev & cust_now
+
+            cm1, cm2, cm3 = st.columns(3)
+            cm1.metric("🆕 CUSTOMER BARU", f"{len(cust_new)} Customer", delta=f"Hanya order di {periode_now['Periode']}")
+            cm2.metric("⚠️ CUSTOMER HILANG", f"{len(cust_churned)} Customer", delta=f"Order di {periode_prev['Periode']}, tidak lanjut", delta_color="inverse")
+            cm3.metric("♻️ CUSTOMER BERTAHAN", f"{len(cust_retained)} Customer")
+
+            # Prioritaskan customer hilang berdasarkan besarnya revenue yang mereka bawa sebelumnya (buat win-back)
+            if cust_churned:
+                rev_prev_by_cust = df_cust_period[
+                    (df_cust_period['Sort_Bulan'] == periode_prev['Sort_Bulan']) & (df_cust_period['Customer'].isin(cust_churned))
+                ].groupby('Customer', as_index=False)['Revenue'].sum().rename(columns={'Revenue': f"Revenue {periode_prev['Periode']}"}).sort_values(f"Revenue {periode_prev['Periode']}", ascending=False).head(10)
+                rev_prev_by_cust[f"Revenue {periode_prev['Periode']}"] = rev_prev_by_cust[f"Revenue {periode_prev['Periode']}"].apply(format_rupiah)
+                rev_prev_by_cust.index = range(1, len(rev_prev_by_cust) + 1)
+
+                top_churn_name = rev_prev_by_cust.iloc[0]['Customer']
+                st.markdown(f"""
+                <div class="insight-box insight-warning">
+                    <b>⚠️ Automated Insight:</b> Ada <b>{len(cust_churned)} customer</b> yang order di {periode_prev['Periode']} tapi tidak lanjut di {periode_now['Periode']}.
+                    Yang paling besar kontribusinya sebelumnya adalah <b>{top_churn_name}</b>. Layak di-follow up ulang sebelum makin lama tidak aktif.
+                </div>
+                """, unsafe_allow_html=True)
+                st.markdown("**🔟 Top 10 Customer Hilang (berdasarkan revenue bulan sebelumnya)**")
+                st.dataframe(rev_prev_by_cust, use_container_width=True)
+        else:
+            st.info("Growth MoM & analisis Customer Churn butuh data minimal 2 bulan berbeda. Upload file bulan lain untuk mengaktifkan fitur ini.")
+
 # ==========================================
 # TAB 8: EXECUTIVE SUMMARY (Full Width Chart & Table)
 # ==========================================
@@ -826,7 +1092,20 @@ with tab8:
     g1.metric("🌍 TOTAL REVENUE (ALL KPI)", format_rupiah(tot_rev_global))
     g2.metric("📦 TOTAL RESI (ALL KPI)", f"{tot_resi_global} Resi")
     g3.metric("👑 MVP SCO (OVERALL)", best_sco_global, f"{format_rupiah(best_sco_rev_global)} Contributed")
-    
+
+    # NEW: insight box perbandingan kontribusi antar pilar KPI (Cash vs Cashless, dst)
+    rekap_kpi_global = df_global.groupby('KPI')['Revenue'].sum().sort_values(ascending=False)
+    if len(rekap_kpi_global) > 1:
+        top_kpi_name = rekap_kpi_global.index[0]
+        top_kpi_share = (rekap_kpi_global.iloc[0] / rekap_kpi_global.sum() * 100)
+        st.markdown(f"""
+        <div class="insight-box">
+            <b>💡 Automated Insight:</b> Pilar <b>{top_kpi_name}</b> menjadi kontributor revenue terbesar secara keseluruhan dengan pangsa
+            <b>{top_kpi_share:,.1f}%</b> dari total <b>{format_rupiah(tot_rev_global)}</b>. SCO <b>{best_sco_global}</b> jadi kontributor
+            individu tertinggi lintas semua pilar KPI.
+        </div>
+        """, unsafe_allow_html=True)
+
     st.markdown("<br>", unsafe_allow_html=True)
     
     st.subheader("📊 Komposisi Revenue SCO berdasarkan KPI")
