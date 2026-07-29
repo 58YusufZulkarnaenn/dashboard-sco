@@ -3,8 +3,6 @@ import pandas as pd
 import altair as alt
 import glob
 import os
-import pydeck as pdk
-import streamlit.components.v1 as components
 
 # ==========================================
 # 1. SETTING HALAMAN & INJEKSI CSS PREMIUM
@@ -150,9 +148,10 @@ def load_unified_data(file_list):
                 filename = os.path.basename(f).lower()
                 xls_input = f
             
+            # --- FIX TYPO DISINI BRO! (Dari kpi_type jadi filename) ---
             if "cashless" in filename: kpi_type = "Cashless"
             elif "kredit auto" in filename: kpi_type = "Kredit Auto"
-            elif "kredit manual" in kpi_type: kpi_type = "Kredit Manual"
+            elif "kredit manual" in filename: kpi_type = "Kredit Manual" 
             elif "cash" in filename: kpi_type = "Cash"
             else: kpi_type = "Cash"
                 
@@ -207,17 +206,11 @@ def format_rupiah(val):
     return f"Rp {val:,.0f}".replace(",", ".")
 
 # ==========================================
-# SIDEBAR KIRI: SISTEM HYBRID, GAMBAR & LOTTIE
+# SIDEBAR KIRI: SISTEM HYBRID & GAMBAR
 # ==========================================
 with st.sidebar:
-    # 1. Gambar Logo Asli (Direstore)
+    # 1. Gambar Logo Asli aja yang dipake (Animasi rusak dicabut biar bersih)
     st.image("https://cdn-icons-png.flaticon.com/512/3063/3063822.png", width=100)
-    
-    # 2. Lottie Animation Vektor (Ditambah di bawah logo)
-    components.html("""
-    <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
-    <lottie-player src="https://lottie.host/809c9918-0959-408a-b9c0-6d4ec08b4720/KxVlZzB4V5.json" background="transparent" speed="1" style="width: 100%; height: 180px;" loop autoplay></lottie-player>
-    """, height=180)
 
 st.sidebar.header("📁 Data Source (Hybrid)")
 st.sidebar.markdown("<p style='font-size:0.9rem; color:#a8b2d1;'>Sistem akan otomatis baca dari server/GitHub. Upload file hanya jika ingin menimpa data sementara.</p>", unsafe_allow_html=True)
@@ -264,6 +257,13 @@ if not list_file_kpi:
 selected_files = list_file_kpi
 
 df_active, df_rata2_active = load_unified_data(selected_files)
+
+# --- SABUK PENGAMAN (FIX ERROR) ---
+if df_active.empty:
+    st.warning("⚠️ Data kosong! Gagal memproses file untuk KPI yang dipilih.")
+    st.stop()
+# ----------------------------------
+
 df_active = df_active.dropna(subset=['Date', 'SCO'])
 df_active['Date_Only'] = df_active['Date'].dt.date
 
@@ -311,7 +311,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "🏆 Top Customer", 
     f"👨‍💼 Kinerja SCO", 
     "⏰ Pola Waktu", 
-    "💳 Layanan & Payment",
+    "💳 Layanan",
     "📍 Pemetaan Destinasi",
     f"🚀 Tren {selected_kpi}",
     "🌐 Executive Summary"
@@ -551,6 +551,7 @@ with tab6:
     if not df_dest.empty:
         dest_df = df_dest.groupby('Destination', as_index=False).agg({'Revenue': 'sum', 'SCO': 'count'}).rename(columns={'SCO': 'Total Resi'}).sort_values('Total Resi', ascending=False)
         
+        import pydeck as pdk
         CITY_COORDS = {
             'JAKARTA': [-6.2088, 106.8456], 'BEKASI': [-6.2383, 106.9756], 
             'BOGOR': [-6.5971, 106.7932], 'DEPOK': [-6.4025, 106.7942], 
