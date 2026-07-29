@@ -289,7 +289,6 @@ try:
     # ==========================================
     with tab6:
         st.header("🚀 Pertumbuhan Bisnis (Akumulasi Seluruh Bulan)")
-        st.markdown("Grafik ini menarik data dari **semua file Excel** yang ada di sistem lu buat ngeliat tren jangka panjang.")
         
         if not df_all.empty:
             # Format tanggal jadi Bulan-Tahun (Contoh: 2026-05, 2026-06)
