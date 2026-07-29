@@ -32,7 +32,6 @@ st.markdown("(By Yusuf Zulkarnaen)")
 st.markdown("Rekapitulasi lengkap data operasional, performa tim, dan insight pelanggan.")
 st.markdown("---")
 
-# Fungsi baca 1 file (Buat Tab 1-5)
 @st.cache_data
 def load_data(file_path):
     xls = pd.ExcelFile(file_path)
@@ -40,7 +39,6 @@ def load_data(file_path):
     df_rata2 = pd.read_excel(xls, "Rata-Rata Hari Masuk")
     return df_raw, df_rata2
 
-# Fungsi baca SEMUA file (Khusus buat Tab Tren Lintas Bulan)
 @st.cache_data
 def load_all_data(file_list):
     all_data = []
@@ -60,9 +58,8 @@ def format_rupiah(val):
 
 try:
     df, df_rata2 = load_data(selected_file)
-    df_all = load_all_data(list_file_excel) # Tarik semua data diem-diem
+    df_all = load_all_data(list_file_excel)
     
-    # ADA 6 TAB SEKARANG!
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📈 Dashboard Utama", 
         "🏆 Top Customer", 
@@ -76,7 +73,7 @@ try:
     # TAB 1: DASHBOARD UTAMA
     # ==========================================
     with tab1:
-        st.header("Ringkasan Performa Bulan Ini")
+        st.header("Ringkasan Performa")
         
         total_resi = len(df)
         total_rev = df['Amount'].sum()
@@ -285,47 +282,82 @@ try:
             st.altair_chart(chart_pay, use_container_width=True)
 
     # ==========================================
-    # TAB 6: TREN LINTAS BULAN (BARU!)
+    # TAB 6: TREN LINTAS BULAN (DESAIN BARU PREMIUM!)
     # ==========================================
     with tab6:
         st.header("🚀 Pertumbuhan Bisnis (Akumulasi Seluruh Bulan)")
+        st.markdown("Grafik ini menarik data dari **semua file Excel** yang ada di sistem lu buat ngeliat tren jangka panjang.")
         
         if not df_all.empty:
-            # Format tanggal jadi Bulan-Tahun (Contoh: 2026-05, 2026-06)
-            df_all['Periode'] = pd.to_datetime(df_all['Date']).dt.strftime('%Y-%m')
+            # Format tanggal bulan
+            df_all['Sort_Bulan'] = pd.to_datetime(df_all['Date']).dt.strftime('%Y-%m') # Buat urutan mesin
+            df_all['Periode'] = pd.to_datetime(df_all['Date']).dt.strftime('%b %Y')    # Buat tulisan di grafik (Misal: May 2026)
             
-            tren_bulan = df_all.groupby('Periode', as_index=False).agg({
+            tren_bulan = df_all.groupby(['Sort_Bulan', 'Periode'], as_index=False).agg({
                 'Amount': 'sum', 
                 'User id': 'count'
             }).rename(columns={'Amount': 'Total Revenue', 'User id': 'Total Transaksi'})
             
-            tren_bulan = tren_bulan.sort_values('Periode')
+            tren_bulan = tren_bulan.sort_values('Sort_Bulan')
+            sort_order = tren_bulan['Periode'].tolist()
             
             b1, b2 = st.columns(2)
+            
+            # --- Grafik Kiri (Revenue) ---
             with b1:
                 st.subheader("💰 Tren Pendapatan (Revenue)")
-                chart_rev_all = alt.Chart(tren_bulan).mark_line(point=True, color='#28a745', strokeWidth=4).encode(
-                    x=alt.X('Periode:N', title='Bulan Tahun'),
-                    y=alt.Y('Total Revenue:Q', title='Pendapatan (Rp)'),
+                
+                base_rev = alt.Chart(tren_bulan).encode(
+                    x=alt.X('Periode:N', sort=sort_order, title='Bulan', axis=alt.Axis(labelAngle=0, grid=False))
+                )
+                # Bikin bayangan area
+                area_rev = base_rev.mark_area(opacity=0.2, color='#00b4d8', interpolate='monotone').encode(
+                    y=alt.Y('Total Revenue:Q', title='Pendapatan (Rp)')
+                )
+                # Bikin garis melengkung (monotone)
+                line_rev = base_rev.mark_line(color='#0077b6', strokeWidth=4, interpolate='monotone').encode(
+                    y='Total Revenue:Q'
+                )
+                # Bikin titik tebal
+                points_rev = base_rev.mark_circle(color='#03045e', size=120, opacity=1).encode(
+                    y='Total Revenue:Q',
                     tooltip=['Periode', 'Total Revenue']
-                ).properties(height=350)
+                )
+                
+                # Tumpuk ketiga grafiknya
+                chart_rev_all = (area_rev + line_rev + points_rev).properties(height=350)
                 st.altair_chart(chart_rev_all, use_container_width=True)
                 
+            # --- Grafik Kanan (Transaksi) ---
             with b2:
                 st.subheader("📦 Tren Volume (Transaksi)")
-                chart_trx_all = alt.Chart(tren_bulan).mark_line(point=True, color='#007bff', strokeWidth=4).encode(
-                    x=alt.X('Periode:N', title='Bulan Tahun'),
-                    y=alt.Y('Total Transaksi:Q', title='Jumlah Resi'),
+                
+                base_trx = alt.Chart(tren_bulan).encode(
+                    x=alt.X('Periode:N', sort=sort_order, title='Bulan', axis=alt.Axis(labelAngle=0, grid=False))
+                )
+                # Bikin bayangan area
+                area_trx = base_trx.mark_area(opacity=0.2, color='#ffb703', interpolate='monotone').encode(
+                    y=alt.Y('Total Transaksi:Q', title='Jumlah Resi')
+                )
+                # Bikin garis melengkung
+                line_trx = base_trx.mark_line(color='#fb8500', strokeWidth=4, interpolate='monotone').encode(
+                    y='Total Transaksi:Q'
+                )
+                # Bikin titik tebal
+                points_trx = base_trx.mark_circle(color='#d00000', size=120, opacity=1).encode(
+                    y='Total Transaksi:Q',
                     tooltip=['Periode', 'Total Transaksi']
-                ).properties(height=350)
+                )
+                
+                # Tumpuk ketiga grafiknya
+                chart_trx_all = (area_trx + line_trx + points_trx).properties(height=350)
                 st.altair_chart(chart_trx_all, use_container_width=True)
                 
             st.markdown("---")
             st.subheader("📋 Rekap Angka Bulanan")
-            tren_tabel = tren_bulan.copy()
+            tren_tabel = tren_bulan[['Periode', 'Total Transaksi', 'Total Revenue']].copy()
             tren_tabel['Total Revenue'] = tren_tabel['Total Revenue'].apply(format_rupiah)
             
-            # Bikin urutan ranking 1, 2, 3..
             tren_tabel.index = range(1, len(tren_tabel) + 1)
             st.dataframe(tren_tabel, use_container_width=True)
         else:
