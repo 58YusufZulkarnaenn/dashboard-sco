@@ -646,38 +646,77 @@ with tab3:
             df_r_clean = df_rata2_active.copy()
             if selected_sco:
                 df_r_clean = df_r_clean[df_r_clean['User id'].isin(selected_sco)]
-            
-            # REVISI 2: Fokus ke metrik utama saja (tanpa Revenue/Kg atau Qty/Resi)
             for col in ['Total_Connote', 'Revenue', 'Hari_Masuk']:
-                if col in df_r_clean.columns: 
-                    df_r_clean[col] = pd.to_numeric(df_r_clean[col], errors='coerce').fillna(0)
-            
+                if col in df_r_clean.columns: df_r_clean[col] = pd.to_numeric(df_r_clean[col], errors='coerce').fillna(0)
             agg_rules = {}
             if 'Total_Connote' in df_r_clean.columns: agg_rules['Total_Connote'] = 'sum'
             if 'Revenue' in df_r_clean.columns: agg_rules['Revenue'] = 'sum'
             if 'Hari_Masuk' in df_r_clean.columns: agg_rules['Hari_Masuk'] = 'sum'
-            if agg_rules: 
-                df_r_clean = df_r_clean.groupby('User id', as_index=False).agg(agg_rules)
-            
+            if agg_rules: df_r_clean = df_r_clean.groupby('User id', as_index=False).agg(agg_rules)
             if 'Hari_Masuk' in df_r_clean.columns:
-                if 'Total_Connote' in df_r_clean.columns: 
-                    df_r_clean['Rata_Transaksi_Per_Hari'] = (df_r_clean['Total_Connote'] / df_r_clean['Hari_Masuk']).fillna(0).round(1)
-                if 'Revenue' in df_r_clean.columns: 
-                    df_r_clean['Rata_Pendapatan_Per_Hari'] = (df_r_clean['Revenue'] / df_r_clean['Hari_Masuk']).fillna(0)
+                if 'Total_Connote' in df_r_clean.columns: df_r_clean['Rata_Transaksi_Per_Hari'] = (df_r_clean['Total_Connote'] / df_r_clean['Hari_Masuk']).fillna(0).round(1)
+                if 'Revenue' in df_r_clean.columns: df_r_clean['Rata_Pendapatan_Per_Hari'] = (df_r_clean['Revenue'] / df_r_clean['Hari_Masuk']).fillna(0)
+            if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns: df_r_clean['Rata_Pendapatan_Per_Hari_Num'] = df_r_clean['Rata_Pendapatan_Per_Hari']
             
-            if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns: 
-                df_r_clean['Rata_Pendapatan_Per_Hari_Num'] = df_r_clean['Rata_Pendapatan_Per_Hari']
+            if 'Revenue' in df_r_clean.columns: df_r_clean['Revenue'] = df_r_clean['Revenue'].apply(format_rupiah)
+            if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns: df_r_clean['Rata_Pendapatan_Per_Hari'] = df_r_clean['Rata_Pendapatan_Per_Hari'].apply(format_rupiah)
+            if 'Total_Connote' in df_r_clean.columns: df_r_clean['Total_Connote'] = df_r_clean['Total_Connote'].astype(int)
+            if 'Hari_Masuk' in df_r_clean.columns: df_r_clean['Hari_Masuk'] = df_r_clean['Hari_Masuk'].astype(int)
             
-            if 'Revenue' in df_r_clean.columns: 
-                df_r_clean['Revenue'] = df_r_clean['Revenue'].apply(format_rupiah)
-            if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns: 
-                df_r_clean['Rata_Pendapatan_Per_Hari'] = df_r_clean['Rata_Pendapatan_Per_Hari'].apply(format_rupiah)
-            if 'Total_Connote' in df_r_clean.columns: 
-                df_r_clean['Total_Connote'] = df_r_clean['Total_Connote'].astype(int)
-            if 'Hari_Masuk' in df_r_clean.columns:
-                df_r_clean['Hari_Masuk'] = df_r_clean['Hari_Masuk'].astype(int)
-                
-            st.dataframe(df_r_clean, use_container_width=True)
+            if 'Rata_Pendapatan_Per_Hari_Num' in df_r_clean.columns:
+                st.subheader("📊 Rata-Rata Pendapatan Harian")
+                df_r_sorted = df_r_clean.sort_values('Rata_Pendapatan_Per_Hari_Num', ascending=False)
+                chart_abs = alt.Chart(df_r_sorted).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
+                    x=alt.X('User id:N', title='SCO', sort='-y'), y=alt.Y('Rata_Pendapatan_Per_Hari_Num:Q', title='Rata-Rata Pendapatan (Rp)'),
+                    color=alt.Color('User id:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None), tooltip=['User id', 'Hari_Masuk', 'Rata_Pendapatan_Per_Hari']
+                ).properties(height=350)
+                st.altair_chart(chart_abs, use_container_width=True)
+            st.subheader("📋 Tabel Detail Kinerja (CASH)")
+            cols = [c for c in df_r_clean.columns if not c.endswith('_Num')]
+            df_r_display = df_r_clean[cols].copy()
+            df_r_display.index = range(1, len(df_r_display) + 1)
+            # POLISH: highlight baris juara (rank 1) berdasar urutan tabel apa adanya
+            st.dataframe(style_top_row(df_r_display), use_container_width=True)
+    else:
+        st.header(f"👨‍💼 Rekapitulasi Kinerja SCO ({selected_kpi})")
+        rekap_sco = df_filtered.groupby('SCO', as_index=False).agg(Total_Resi=('Revenue', 'count'), Total_Revenue=('Revenue', 'sum')).sort_values('Total_Revenue', ascending=False)
+        rekap_sco['Total_Revenue_Num'] = rekap_sco['Total_Revenue']
+        st.subheader("📊 Total Pendapatan Tiap SCO")
+        chart_noncash = alt.Chart(rekap_sco).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
+            x=alt.X('SCO:N', title='Nama SCO', sort='-y'), y=alt.Y('Total_Revenue_Num:Q', title='Total Revenue (Rp)'),
+            color=alt.Color('SCO:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None), tooltip=['SCO', 'Total_Resi', 'Total_Revenue_Num']
+        ).properties(height=350)
+        st.altair_chart(chart_noncash, use_container_width=True)
+        tabel_sco = rekap_sco.copy()
+        tabel_sco['Total_Revenue'] = tabel_sco['Total_Revenue'].apply(format_rupiah)
+        tabel_sco = tabel_sco.drop(columns=['Total_Revenue_Num'])
+        tabel_sco.index = range(1, len(tabel_sco) + 1)
+        st.subheader(f"📋 Tabel Detail Kinerja ({selected_kpi})")
+        # POLISH: highlight baris juara (rank 1)
+        st.dataframe(style_top_row(tabel_sco), use_container_width=True)
+ 
+        # FIX/NEW: dulu analisis "produktivitas per hari kerja" cuma ada utk KPI Cash (dari sheet
+        # 'Rata-Rata Hari Masuk'). Sekarang dihitung langsung dari Raw Data biar KPI lain (mis. Cashless)
+        # juga dapat insight yang setara, tanpa perlu sheet tambahan.
+        st.markdown("---")
+        st.subheader(f"📊 Produktivitas Harian SCO ({selected_kpi})")
+        prod_sco = df_filtered.groupby('SCO').agg(Total_Connote=('Revenue', 'count'), Total_Revenue=('Revenue', 'sum'), Hari_Masuk=('Date_Only', 'nunique')).reset_index()
+        prod_sco['Rata_Transaksi_Per_Hari'] = (prod_sco['Total_Connote'] / prod_sco['Hari_Masuk']).round(1)
+        prod_sco['Rata_Pendapatan_Per_Hari'] = (prod_sco['Total_Revenue'] / prod_sco['Hari_Masuk'])
+        prod_sco = prod_sco.sort_values('Rata_Pendapatan_Per_Hari', ascending=False)
+ 
+        chart_prod = alt.Chart(prod_sco).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
+            x=alt.X('SCO:N', title='SCO', sort='-y'), y=alt.Y('Rata_Pendapatan_Per_Hari:Q', title='Rata-Rata Pendapatan / Hari Kerja (Rp)'),
+            color=alt.Color('SCO:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None),
+            tooltip=['SCO', 'Hari_Masuk', 'Rata_Transaksi_Per_Hari', 'Rata_Pendapatan_Per_Hari']
+        ).properties(height=320)
+        st.altair_chart(chart_prod, use_container_width=True)
+ 
+        prod_display = prod_sco.copy()
+        prod_display['Total_Revenue'] = prod_display['Total_Revenue'].apply(format_rupiah)
+        prod_display['Rata_Pendapatan_Per_Hari'] = prod_display['Rata_Pendapatan_Per_Hari'].apply(format_rupiah)
+        prod_display.index = range(1, len(prod_display) + 1)
+        st.dataframe(style_top_row(prod_display), use_container_width=True)
 
 # ==========================================
 # TAB 4: POLA HARI & JAM SIBUK
