@@ -5,8 +5,7 @@ import glob
 import os
 import requests
 
-# INI LIBRARY BARU UNTUK KOSMETIK & MESIN PINTAR
-from st_aggrid import AgGrid, GridOptionsBuilder, ColumnsAutoSizeMode
+# INI LIBRARY UNTUK KOSMETIK & MESIN PINTAR
 from geopy.geocoders import Nominatim
 from streamlit_lottie import st_lottie
 
@@ -16,7 +15,7 @@ from streamlit_lottie import st_lottie
 st.set_page_config(page_title="Dashboard SCO", page_icon="📦", layout="wide")
 
 # ------------------------------------------
-# PALET WARNA BRAND (dipakai konsisten di semua chart)
+# PALET WARNA BRAND
 # ------------------------------------------
 BRAND_TEAL = "#64ffda"
 BRAND_TEAL_DARK = "#0f9b8e"
@@ -91,14 +90,6 @@ def add_custom_css():
         font-size: 1.1rem;
         color: #e6f1ff;
         box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        transition: box-shadow 0.3s ease;
-    }
-    .insight-box:hover {
-        box-shadow: 0 4px 20px rgba(100, 255, 218, 0.25);
-    }
-    .insight-box.insight-warning {
-        background: linear-gradient(90deg, rgba(255, 209, 102, 0.15) 0%, rgba(255, 209, 102, 0.0) 100%);
-        border-left: 5px solid #ffd166;
     }
 
     [data-testid="stVegaLiteChart"], [data-testid="stArrowVegaLiteChart"] {
@@ -118,24 +109,13 @@ def add_custom_css():
         overflow: hidden;
         border: 1px solid rgba(255, 255, 255, 0.1);
         box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
-        transition: box-shadow 0.35s ease, border 0.35s ease;
-    }
-    [data-testid="stDeckGlJsonChart"]:hover {
-        box-shadow: 0 12px 40px rgba(100, 255, 218, 0.2);
-        border: 1px solid rgba(100, 255, 218, 0.3);
     }
 
-    /* Override AgGrid Container untuk blend sama tema dark */
-    .ag-theme-streamlit {
+    [data-testid="stDataFrame"] {
         border-radius: 15px;
         overflow: hidden;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1);
         box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.25);
-        transition: box-shadow 0.3s ease, border 0.3s ease;
-    }
-    .ag-theme-streamlit:hover {
-        box-shadow: 0 10px 36px rgba(100, 255, 218, 0.15);
-        border: 1px solid rgba(100, 255, 218, 0.25) !important;
     }
 
     .app-footer {
@@ -160,14 +140,13 @@ def add_custom_css():
 add_custom_css()
 
 # ==========================================
-# FITUR BARU: ANIMASI LOTTIE
+# ANIMASI LOTTIE
 # ==========================================
 @st.cache_data
 def load_lottieurl(url: str):
     try:
         r = requests.get(url)
-        if r.status_code != 200:
-            return None
+        if r.status_code != 200: return None
         return r.json()
     except:
         return None
@@ -175,41 +154,17 @@ def load_lottieurl(url: str):
 lottie_empty = load_lottieurl("https://lottie.host/8c0678a3-2c1b-4171-af63-1463132e01df/p3F2Q1MTh5.json")
 
 # ==========================================
-# FITUR BARU: TABEL AGGRID (EXCEL-LIKE)
+# HELPER: HIGHLIGHT BARIS JUARA DI TABEL
 # ==========================================
-def render_aggrid(df, height=350):
-    """Merender DataFrame menggunakan AgGrid dengan fitur filter & export."""
-    gb = GridOptionsBuilder.from_dataframe(df)
-    gb.configure_default_column(resizable=True, sortable=True, filter=True, autoHeight=True)
-    gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=10)
-    
-    # Custom JS: Highlight baris juara 1 (warna emas tipis)
-    jscode = """
-    function(params) {
-        if (params.node.rowIndex === 0) {
-            return {
-                'backgroundColor': 'rgba(255, 209, 102, 0.15)',
-                'color': '#ffd166',
-                'fontWeight': 'bold'
-            };
-        }
-    }
-    """
-    gb.configure_grid_options(getRowStyle=jscode)
-    
-    gridOptions = gb.build()
-    
-    AgGrid(
-        df,
-        gridOptions=gridOptions,
-        theme='streamlit',
-        allow_unsafe_jscode=True,
-        columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
-        height=height
-    )
+def style_top_row(df):
+    def _highlight(row):
+        if row.name == df.index[0]:
+            return ['background-color: rgba(255, 209, 102, 0.18); font-weight: 700; color: #ffd166;'] * len(row)
+        return [''] * len(row)
+    return df.style.apply(_highlight, axis=1)
 
 # ==========================================
-# 2. TEMA ALTAIR GLOBAL
+# TEMA ALTAIR GLOBAL
 # ==========================================
 def altair_dark_theme():
     return {
@@ -217,30 +172,17 @@ def altair_dark_theme():
             "background": "transparent",
             "view": {"stroke": "transparent"},
             "axis": {
-                "labelColor": "#a8b2d1",
-                "titleColor": "#a8b2d1",
-                "gridColor": "rgba(255,255,255,0.05)",
-                "domainColor": "rgba(255,255,255,0.1)",
-                "tickColor": "rgba(255,255,255,0.1)"
+                "labelColor": "#a8b2d1", "titleColor": "#a8b2d1",
+                "gridColor": "rgba(255,255,255,0.05)", "domainColor": "rgba(255,255,255,0.1)", "tickColor": "rgba(255,255,255,0.1)"
             },
-            "legend": {
-                "labelColor": "#a8b2d1",
-                "titleColor": "#a8b2d1"
-            },
+            "legend": {"labelColor": "#a8b2d1", "titleColor": "#a8b2d1"},
             "title": {"color": "#ffffff"},
-            "range": {
-                "category": BRAND_CATEGORICAL,
-                "heatmap": BRAND_SEQUENTIAL,
-                "ramp": BRAND_SEQUENTIAL
-            }
+            "range": {"category": BRAND_CATEGORICAL, "heatmap": BRAND_SEQUENTIAL, "ramp": BRAND_SEQUENTIAL}
         }
     }
 alt.themes.register("dark_custom", altair_dark_theme)
 alt.themes.enable("dark_custom")
 
-# ==========================================
-# NOTIFIKASI TOAST
-# ==========================================
 if 'welcome_toast' not in st.session_state:
     st.toast('🚀 Selamat datang di Dashboard KP Grand Taruma! Memuat data analitik...', icon='🔥')
     st.session_state['welcome_toast'] = True
@@ -310,7 +252,6 @@ def load_unified_data(file_list):
                 df_std['Service'] = df[col_srv] if col_srv else "-"
                 
                 df_std['Customer'] = df['Shipper Name'].fillna("-") if 'Shipper Name' in df.columns else "-"
-                
                 df_std['Destination'] = df['Destination'].apply(lambda x: clean_destination(x, kpi_type)) if 'Destination' in df.columns else "-"
                 
                 if kpi_type == "Cashless":
@@ -326,20 +267,18 @@ def load_unified_data(file_list):
             if kpi_type == "Cash" and "Rata-Rata Hari Masuk" in xls.sheet_names:
                 df_r = pd.read_excel(xls, "Rata-Rata Hari Masuk")
                 all_rata2.append(df_r)
-                
-        except Exception as e:
+        except:
             pass
             
     df_master = pd.concat(all_raw, ignore_index=True) if all_raw else pd.DataFrame()
     df_rata2_master = pd.concat(all_rata2, ignore_index=True) if all_rata2 else pd.DataFrame()
-    
     return df_master, df_rata2_master
 
 def format_rupiah(val):
     return f"Rp {val:,.0f}".replace(",", ".")
 
 # ==========================================
-# FITUR BARU: MESIN GEOCODING (OTOMATIS CARI KOORDINAT)
+# MESIN GEOCODING (OTOMATIS)
 # ==========================================
 CITY_COORDS = {
     'JAKARTA': [-6.2088, 106.8456], 'BEKASI': [-6.2383, 106.9756], 
@@ -363,32 +302,25 @@ CITY_COORDS = {
 
 @st.cache_data(show_spinner=False)
 def get_coordinates(city_name):
-    if pd.isna(city_name) or city_name == "-":
-        return [None, None]
+    if pd.isna(city_name) or city_name == "-": return [None, None]
     city_up = city_name.upper()
-    
-    # 1. Cek di kamus hardcode dulu biar instan
-    if city_up in CITY_COORDS:
-        return CITY_COORDS[city_up]
-    
-    # 2. Kalau kota baru pengiriman, cari pakai Geopy API
+    if city_up in CITY_COORDS: return CITY_COORDS[city_up]
     try:
         geolocator = Nominatim(user_agent="sco_dashboard_grand_taruma")
         location = geolocator.geocode(f"{city_name}, Indonesia")
-        if location:
-            return [location.latitude, location.longitude]
+        if location: return [location.latitude, location.longitude]
     except:
         pass
     return [None, None]
 
 # ==========================================
-# SIDEBAR KIRI: SISTEM HYBRID & GAMBAR
+# SIDEBAR KIRI
 # ==========================================
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3063/3063822.png", width=100)
 
 st.sidebar.header("📁 Data Source (Hybrid)")
-st.sidebar.markdown("<p style='font-size:0.9rem; color:#a8b2d1;'>Sistem akan otomatis baca dari server/GitHub. Upload file hanya jika ingin menimpa data sementara.</p>", unsafe_allow_html=True)
+st.sidebar.markdown("<p style='font-size:0.9rem; color:#a8b2d1;'>Sistem otomatis membaca file Excel dari server/GitHub.</p>", unsafe_allow_html=True)
 
 uploaded_files = st.sidebar.file_uploader("Upload File Bypass (.xlsx)", type=['xlsx'], accept_multiple_files=True)
 
@@ -396,8 +328,7 @@ if uploaded_files:
     active_files = uploaded_files
 else:
     list_local = glob.glob("*.xlsx")
-    list_local = [f for f in list_local if not f.startswith("~$")]
-    active_files = list_local
+    active_files = [f for f in list_local if not f.startswith("~$")]
 
 if not active_files:
     if lottie_empty: st_lottie(lottie_empty, height=200, key="empty_file")
@@ -429,41 +360,30 @@ if not list_file_kpi:
     st.sidebar.warning(f"File untuk KPI {selected_kpi} tidak ditemukan.")
     st.stop()
 
-# Langsung Bypass Filter
-selected_files = list_file_kpi
-
-df_active, df_rata2_active = load_unified_data(selected_files)
-
-# --- SABUK PENGAMAN ---
+df_active, df_rata2_active = load_unified_data(list_file_kpi)
 if df_active.empty:
-    st.warning("⚠️ Data kosong! Gagal memproses file untuk KPI yang dipilih.")
+    st.warning("⚠️ Data kosong! Gagal memproses file.")
     st.stop()
-# ----------------------------------
 
 df_active = df_active.dropna(subset=['Date', 'SCO'])
 df_active['Date_Only'] = df_active['Date'].dt.date
-
 df_kpi_only = df_active[df_active['KPI'] == selected_kpi]
 
 if df_kpi_only.empty:
-    st.warning("Data untuk KPI ini kosong pada file yang dipilih.")
+    st.warning("Data untuk KPI ini kosong.")
     st.stop()
 
 min_date = df_kpi_only['Date_Only'].min()
 max_date = df_kpi_only['Date_Only'].max()
 date_range = st.sidebar.date_input("📅 Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_value=max_date)
-if len(date_range) == 2:
-    start_date, end_date = date_range
-else:
-    start_date = end_date = date_range[0]
+start_date, end_date = date_range if len(date_range) == 2 else (date_range[0], date_range[0])
     
 list_sco = df_kpi_only['SCO'].dropna().unique().tolist()
-selected_sco = st.sidebar.multiselect("👨‍💼 Pilih SCO (Bisa >1):", options=list_sco, default=[], help="Kosongkan buat nampilin semua")
+selected_sco = st.sidebar.multiselect("👨‍💼 Pilih SCO (Bisa >1):", options=list_sco, default=[])
 
 mask_date = (df_kpi_only['Date_Only'] >= start_date) & (df_kpi_only['Date_Only'] <= end_date)
 df_filtered = df_kpi_only[mask_date].copy()
-if selected_sco:
-    df_filtered = df_filtered[df_filtered['SCO'].isin(selected_sco)]
+if selected_sco: df_filtered = df_filtered[df_filtered['SCO'].isin(selected_sco)]
 
 st.sidebar.markdown("---")
 st.sidebar.header("📥 Export Data")
@@ -471,7 +391,7 @@ csv_data = df_filtered.to_csv(index=False).encode('utf-8')
 st.sidebar.download_button(label=f"Download Rekap {selected_kpi} (CSV)", data=csv_data, file_name=f"Data_Export_{selected_kpi}.csv", mime='text/csv')
 
 # ==========================================
-# TAMPILAN DASHBOARD
+# TAMPILAN UTAMA
 # ==========================================
 st.title("📊 Dashboard Enterprise KP Grand Taruma")
 st.markdown("<p style='color:#a8b2d1 !important; font-size:1.2rem; font-weight: 600;'>(By Yusuf Zulkarnaen)</p>", unsafe_allow_html=True)
@@ -479,22 +399,13 @@ st.markdown(f"Sedang menampilkan analitik untuk pilar: <b style='color:#64ffda;'
 st.markdown("---")
 
 if df_filtered.empty:
-    if lottie_empty:
-        col_lot1, col_lot2, col_lot3 = st.columns([1,2,1])
-        with col_lot2:
-            st_lottie(lottie_empty, height=250, key="empty_filtered")
-    st.warning("⚠️ Data kosong pada rentang waktu atau SCO yang dipilih. Silakan sesuaikan filter Sidebar.")
+    if lottie_empty: st_lottie(lottie_empty, height=250, key="empty_filtered")
+    st.warning("⚠️ Data kosong pada rentang waktu atau SCO yang dipilih.")
     st.stop()
 
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-    "📈 Dashboard Utama", 
-    "🏆 Top Customer", 
-    f"👨‍💼 Kinerja SCO", 
-    "⏰ Pola Waktu", 
-    "💳 Metode Pembayaran & Layanan",
-    "📍 Pemetaan Destinasi",
-    f"🚀 Tren {selected_kpi}",
-    "🌐 Executive Summary"
+    "📈 Dashboard Utama", "🏆 Top Customer", f"👨‍💼 Kinerja SCO", "⏰ Pola Waktu", 
+    "💳 Metode Pembayaran & Layanan", "📍 Pemetaan Destinasi", f"🚀 Tren {selected_kpi}", "🌐 Executive Summary"
 ])
 
 # ==========================================
@@ -513,19 +424,11 @@ with tab1:
     sco_aktif = df_filtered['SCO'].nunique()
     srv_top = df_filtered['Service'].mode()[0] if not df_filtered['Service'].empty else "-"
     pay_top = df_filtered['Payment_Method'].mode()[0] if not df_filtered['Payment_Method'].empty else "-"
-    
-    share_best = (best_user_rev / total_rev * 100) if total_rev > 0 else 0
-    if share_best >= 40:
-        insight_icon = "🔥"
-        insight_class = "insight-box"
-    else:
-        insight_icon = "💡"
-        insight_class = "insight-box"
 
     st.markdown(f"""
-    <div class="{insight_class}">
-        <b>{insight_icon} Automated Insight:</b> Berdasarkan periode yang dipilih, <b>{best_user}</b> memimpin kontribusi SCO dengan revenue <b>{format_rupiah(best_user_rev)}</b>. 
-        Secara keseluruhan, layanan <b>{srv_top}</b> paling sering diandalkan oleh pelanggan.
+    <div class="insight-box">
+        <b>🔥 Automated Insight:</b> <b>{best_user}</b> memimpin kontribusi SCO dengan revenue <b>{format_rupiah(best_user_rev)}</b>. 
+        Layanan <b>{srv_top}</b> paling sering diandalkan pelanggan.
     </div>
     """, unsafe_allow_html=True)
 
@@ -560,41 +463,15 @@ with tab1:
             color=alt.Color('SCO:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None), tooltip=['SCO', 'Pendapatan']
         ).properties(height=300)
         st.altair_chart(chart_sco, use_container_width=True)
-        
-    st.markdown("---")
-    bawah1, bawah2 = st.columns(2)
-    with bawah1:
-        st.subheader(f"💵 Rata-Rata Revenue per Resi (Harian)")
-        rata_harian = df_filtered.groupby('Date_Only', as_index=False).agg(Total_Rev=('Revenue', 'sum'), Total_Resi=('Revenue', 'count'))
-        rata_harian['Rata-Rata'] = rata_harian['Total_Rev'] / rata_harian['Total_Resi']
-        chart_avg = alt.Chart(rata_harian).mark_area(
-            opacity=0.3,
-            color=alt.Gradient(gradient='linear', stops=[alt.GradientStop(color=BRAND_TEAL, offset=0), alt.GradientStop(color='rgba(0,0,0,0)', offset=1)], x1=1, x2=1, y1=1, y2=0)
-        ).encode(
-            x=alt.X('Date_Only:T', title='Tanggal'), y=alt.Y('Rata-Rata:Q', title='Rata-Rata Revenue (Rp)'), tooltip=['Date_Only', 'Rata-Rata']
-        )
-        line_avg = alt.Chart(rata_harian).mark_line(color=BRAND_TEAL, strokeWidth=3).encode(x='Date_Only:T', y='Rata-Rata:Q')
-        st.altair_chart((chart_avg + line_avg).properties(height=300), use_container_width=True)
-
-    with bawah2:
-        st.subheader("📦 Top 5 Destinasi Pengiriman")
-        dest_df_quick = df_filtered[df_filtered['Destination'] != '-'].groupby('Destination', as_index=False).size().rename(columns={'size':'Total Resi'}).sort_values('Total Resi', ascending=False).head(5)
-        chart_dest_quick = alt.Chart(dest_df_quick).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5, color=BRAND_CYAN).encode(
-            x=alt.X('Total Resi:Q', title='Jumlah Transaksi'),
-            y=alt.Y('Destination:N', sort='-x', title='Daerah Tujuan'),
-            tooltip=['Destination', 'Total Resi']
-        ).properties(height=300)
-        st.altair_chart(chart_dest_quick, use_container_width=True)
 
 # ==========================================
-# TAB 2: TOP CUSTOMER (UPGRADED WITH AGGRID)
+# TAB 2: TOP CUSTOMER
 # ==========================================
 with tab2:
     st.header(f"🏆 Analisis Top Customer ({selected_kpi})")
     df_cust = df_filtered[df_filtered['Customer'] != '-']
     if df_cust.empty:
-        if lottie_empty: st_lottie(lottie_empty, height=150, key="empty_cust")
-        st.info("Tidak ada data Customer (Shipper Name) di rentang waktu/SCO ini.")
+        st.info("Tidak ada data Customer di rentang waktu ini.")
     else:
         col_rev, col_con = st.columns(2)
         with col_rev:
@@ -608,9 +485,8 @@ with tab2:
             
             top_rev_tabel = top_rev.copy()
             top_rev_tabel['Total Belanja'] = top_rev_tabel['Total Belanja'].apply(format_rupiah)
-            
-            # FITUR BARU: Rendering AgGrid
-            render_aggrid(top_rev_tabel)
+            top_rev_tabel.index = range(1, len(top_rev_tabel) + 1)
+            st.dataframe(style_top_row(top_rev_tabel), use_container_width=True)
 
         with col_con:
             st.subheader("🔢 Top 10 Customer (By Connote)")
@@ -623,74 +499,43 @@ with tab2:
             
             top_con_tabel = top_con.copy()
             top_con_tabel['Total Belanja'] = top_con_tabel['Total Belanja'].apply(format_rupiah)
-            
-            # FITUR BARU: Rendering AgGrid
-            render_aggrid(top_con_tabel)
+            top_con_tabel.index = range(1, len(top_con_tabel) + 1)
+            st.dataframe(style_top_row(top_con_tabel), use_container_width=True)
 
 # ==========================================
-# TAB 3: KINERJA SCO (UPGRADED WITH AGGRID)
+# TAB 3: KINERJA SCO
 # ==========================================
 with tab3:
     if selected_kpi == "Cash":
         st.header("👨‍💼 Rata-Rata Hari Masuk & Produktivitas SCO")
         if df_rata2_active.empty:
-            st.info("Data sheet 'Rata-Rata Hari Masuk' tidak ditemukan di file Cash ini.")
+            st.info("Data sheet 'Rata-Rata Hari Masuk' tidak ditemukan.")
         else:
             df_r_clean = df_rata2_active.copy()
-            if selected_sco:
-                df_r_clean = df_r_clean[df_r_clean['User id'].isin(selected_sco)]
+            if selected_sco: df_r_clean = df_r_clean[df_r_clean['User id'].isin(selected_sco)]
             for col in ['Total_Connote', 'Revenue', 'Hari_Masuk']:
                 if col in df_r_clean.columns: df_r_clean[col] = pd.to_numeric(df_r_clean[col], errors='coerce').fillna(0)
-            agg_rules = {}
-            if 'Total_Connote' in df_r_clean.columns: agg_rules['Total_Connote'] = 'sum'
-            if 'Revenue' in df_r_clean.columns: agg_rules['Revenue'] = 'sum'
-            if 'Hari_Masuk' in df_r_clean.columns: agg_rules['Hari_Masuk'] = 'sum'
-            if agg_rules: df_r_clean = df_r_clean.groupby('User id', as_index=False).agg(agg_rules)
-            if 'Hari_Masuk' in df_r_clean.columns:
-                if 'Total_Connote' in df_r_clean.columns: df_r_clean['Rata_Transaksi_Per_Hari'] = (df_r_clean['Total_Connote'] / df_r_clean['Hari_Masuk']).fillna(0).round(1)
-                if 'Revenue' in df_r_clean.columns: df_r_clean['Rata_Pendapatan_Per_Hari'] = (df_r_clean['Revenue'] / df_r_clean['Hari_Masuk']).fillna(0)
-            if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns: df_r_clean['Rata_Pendapatan_Per_Hari_Num'] = df_r_clean['Rata_Pendapatan_Per_Hari']
+            agg_rules = {'Total_Connote': 'sum', 'Revenue': 'sum', 'Hari_Masuk': 'sum'}
+            df_r_clean = df_r_clean.groupby('User id', as_index=False).agg(agg_rules)
+            df_r_clean['Rata_Transaksi_Per_Hari'] = (df_r_clean['Total_Connote'] / df_r_clean['Hari_Masuk']).fillna(0).round(1)
+            df_r_clean['Rata_Pendapatan_Per_Hari'] = (df_r_clean['Revenue'] / df_r_clean['Hari_Masuk']).fillna(0)
+            df_r_clean['Rata_Pendapatan_Per_Hari_Num'] = df_r_clean['Rata_Pendapatan_Per_Hari']
             
-            if 'Revenue' in df_r_clean.columns: df_r_clean['Revenue'] = df_r_clean['Revenue'].apply(format_rupiah)
-            if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns: df_r_clean['Rata_Pendapatan_Per_Hari'] = df_r_clean['Rata_Pendapatan_Per_Hari'].apply(format_rupiah)
-            if 'Total_Connote' in df_r_clean.columns: df_r_clean['Total_Connote'] = df_r_clean['Total_Connote'].astype(int)
-            if 'Hari_Masuk' in df_r_clean.columns: df_r_clean['Hari_Masuk'] = df_r_clean['Hari_Masuk'].astype(int)
+            df_r_clean['Revenue'] = df_r_clean['Revenue'].apply(format_rupiah)
+            df_r_clean['Rata_Pendapatan_Per_Hari'] = df_r_clean['Rata_Pendapatan_Per_Hari'].apply(format_rupiah)
             
-            if 'Rata_Pendapatan_Per_Hari_Num' in df_r_clean.columns:
-                st.subheader("📊 Rata-Rata Pendapatan Harian")
-                df_r_sorted = df_r_clean.sort_values('Rata_Pendapatan_Per_Hari_Num', ascending=False)
-                chart_abs = alt.Chart(df_r_sorted).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-                    x=alt.X('User id:N', title='SCO', sort='-y'), y=alt.Y('Rata_Pendapatan_Per_Hari_Num:Q', title='Rata-Rata Pendapatan (Rp)'),
-                    color=alt.Color('User id:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None), tooltip=['User id', 'Hari_Masuk', 'Rata_Pendapatan_Per_Hari']
-                ).properties(height=350)
-                st.altair_chart(chart_abs, use_container_width=True)
-                
             st.subheader("📋 Tabel Detail Kinerja (CASH)")
             cols = [c for c in df_r_clean.columns if not c.endswith('_Num')]
             df_r_display = df_r_clean[cols].copy()
-            
-            # FITUR BARU: Rendering AgGrid
-            render_aggrid(df_r_display)
-            
+            df_r_display.index = range(1, len(df_r_display) + 1)
+            st.dataframe(style_top_row(df_r_display), use_container_width=True)
     else:
         st.header(f"👨‍💼 Rekapitulasi Kinerja SCO ({selected_kpi})")
         rekap_sco = df_filtered.groupby('SCO', as_index=False).agg(Total_Resi=('Revenue', 'count'), Total_Revenue=('Revenue', 'sum')).sort_values('Total_Revenue', ascending=False)
-        rekap_sco['Total_Revenue_Num'] = rekap_sco['Total_Revenue']
-        st.subheader("📊 Total Pendapatan Tiap SCO")
-        chart_noncash = alt.Chart(rekap_sco).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-            x=alt.X('SCO:N', title='Nama SCO', sort='-y'), y=alt.Y('Total_Revenue_Num:Q', title='Total Revenue (Rp)'),
-            color=alt.Color('SCO:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None), tooltip=['SCO', 'Total_Resi', 'Total_Revenue_Num']
-        ).properties(height=350)
-        st.altair_chart(chart_noncash, use_container_width=True)
-        
         tabel_sco = rekap_sco.copy()
         tabel_sco['Total_Revenue'] = tabel_sco['Total_Revenue'].apply(format_rupiah)
-        tabel_sco = tabel_sco.drop(columns=['Total_Revenue_Num'])
-        
-        st.subheader(f"📋 Tabel Detail Kinerja ({selected_kpi})")
-        
-        # FITUR BARU: Rendering AgGrid
-        render_aggrid(tabel_sco)
+        tabel_sco.index = range(1, len(tabel_sco) + 1)
+        st.dataframe(style_top_row(tabel_sco), use_container_width=True)
 
 # ==========================================
 # TAB 4: POLA HARI & JAM SIBUK
@@ -745,144 +590,69 @@ with tab5:
         st.altair_chart(chart_pay, use_container_width=True)
 
 # ==========================================
-# TAB 6: PEMETAAN DESTINASI (UPGRADED GEOCODING)
+# TAB 6: PEMETAAN DESTINASI
 # ==========================================
 with tab6:
     st.header(f"📍 Analisis Wilayah Destinasi ({selected_kpi})")
     df_dest = df_filtered[df_filtered['Destination'] != '-']
-    
     if not df_dest.empty:
         dest_df = df_dest.groupby('Destination', as_index=False).agg({'Revenue': 'sum', 'SCO': 'count'}).rename(columns={'SCO': 'Total Resi'}).sort_values('Total Resi', ascending=False)
         
         import pydeck as pdk
-        
-        # FITUR BARU: Menarik koordinat secara otomatis/dinamis via fungsi get_coordinates
         dest_df['lat'] = dest_df['Destination'].apply(lambda x: get_coordinates(x)[0])
         dest_df['lon'] = dest_df['Destination'].apply(lambda x: get_coordinates(x)[1])
-        
         map_df = dest_df.dropna(subset=['lat', 'lon']).copy()
         
         if not map_df.empty:
             st.subheader("🗺️ Peta 3D Persebaran Logistik")
-            st.markdown("<p style='color:#a8b2d1; font-size:0.9rem;'>Warna teal ke emas dan tinggi pilar menandakan tingginya jumlah resi. (Bisa di-zoom, geser, klik kanan tahan untuk memutar 3D)</p>", unsafe_allow_html=True)
-            
             max_resi = map_df['Total Resi'].max()
             min_resi = map_df['Total Resi'].min()
             
             def get_color(resi):
-                if max_resi == min_resi:
-                    norm = 0.5
-                else:
-                    norm = (resi - min_resi) / (max_resi - min_resi)
-                start = (15, 155, 142)   # BRAND_TEAL_DARK
-                end = (255, 209, 102)    # BRAND_GOLD
-                r = int(start[0] + (end[0] - start[0]) * norm)
-                g = int(start[1] + (end[1] - start[1]) * norm)
-                b = int(start[2] + (end[2] - start[2]) * norm)
-                return [r, g, b, 220]
+                norm = 0.5 if max_resi == min_resi else (resi - min_resi) / (max_resi - min_resi)
+                return [int(15 + (255 - 15) * norm), int(155 + (209 - 155) * norm), int(142 + (102 - 142) * norm), 220]
                 
             map_df['color'] = map_df['Total Resi'].apply(get_color)
-            
-            layer = pdk.Layer(
-                'ColumnLayer', 
-                data=map_df,
-                get_position='[lon, lat]',
-                get_elevation='Total Resi',
-                elevation_scale=1000, 
-                radius=10000, 
-                get_fill_color='color',
-                pickable=True,
-                auto_highlight=True,
-                extruded=True
-            )
-            
+            layer = pdk.Layer('ColumnLayer', data=map_df, get_position='[lon, lat]', get_elevation='Total Resi', elevation_scale=1000, radius=10000, get_fill_color='color', pickable=True, auto_highlight=True, extruded=True)
             view_state = pdk.ViewState(latitude=-6.2, longitude=110.0, zoom=5, pitch=50, bearing=15)
-            
-            r = pdk.Deck(
-                layers=[layer], initial_view_state=view_state,
-                tooltip={
-                    "html": "<b style='color:#64ffda;'>📍 {Destination}</b><br/>📦 Resi: {Total Resi}<br/>💰 Rev: Rp {Revenue}",
-                    "style": {
-                        "backgroundColor": "rgba(15, 32, 39, 0.95)",
-                        "color": "#e6f1ff",
-                        "border": "1px solid rgba(100, 255, 218, 0.4)",
-                        "borderRadius": "10px",
-                        "padding": "10px 14px",
-                        "fontFamily": "'Plus Jakarta Sans', sans-serif",
-                        "fontSize": "0.85rem"
-                    }
-                },
-                map_style='dark'
-            )
+            r = pdk.Deck(layers=[layer], initial_view_state=view_state, map_style='dark')
             st.pydeck_chart(r)
-        else:
-            st.info("💡 Peta logistik belum bisa ditampilkan. Tidak ada kota yang berhasil ditarik koordinatnya.")
             
         st.markdown("---")
-        
-        st.subheader("📊 Rincian Top Destinasi")
-        d1, d2 = st.columns([1, 1])
         top15_df = dest_df.head(15).copy()
-        
-        with d1:
-            chart_dest = alt.Chart(top15_df).mark_arc(innerRadius=70, cornerRadius=4).encode(
-                theta=alt.Theta(field="Total Resi", type="quantitative"),
-                color=alt.Color(field="Destination", type="nominal", scale=alt.Scale(range=BRAND_SEQUENTIAL + BRAND_CATEGORICAL), legend=None),
-                tooltip=['Destination', 'Total Resi', 'Revenue']
-            ).properties(height=400)
-            st.altair_chart(chart_dest, use_container_width=True)
-        with d2:
-            # FITUR BARU: Rendering AgGrid
-            render_aggrid(top15_df[['Destination', 'Total Resi', 'Revenue']], height=400)
-            
-    else:
-        st.info("Data destinasi tidak tersedia di file ini.")
+        top15_df.index = range(1, len(top15_df) + 1)
+        st.dataframe(style_top_row(top15_df[['Destination', 'Total Resi', 'Revenue']]), use_container_width=True)
 
 # ==========================================
-# TAB 7: TREN LINTAS BULAN (UPGRADED DENGAN AGGRID)
+# TAB 7: TREN LINTAS BULAN
 # ==========================================
 with tab7:
     st.header(f"🚀 Pertumbuhan Bisnis - {selected_kpi.upper()}")
-    st.markdown(f"<p style='color:#a8b2d1 !important;'>Menarik data {selected_kpi} dari seluruh file (tidak terpengaruh rentang tanggal di sidebar).</p>", unsafe_allow_html=True)
-    
     if not df_kpi_only.empty:
         df_kpi_only['Sort_Bulan'] = df_kpi_only['Date'].dt.strftime('%Y-%m')
         df_kpi_only['Periode'] = df_kpi_only['Date'].dt.strftime('%b %Y')    
-        
-        tren_bulan = df_kpi_only.groupby(['Sort_Bulan', 'Periode'], as_index=False).agg({'Revenue': 'sum', 'SCO': 'count'}).rename(columns={'Revenue': 'Total Revenue', 'SCO': 'Total Transaksi'})
-        tren_bulan = tren_bulan.sort_values('Sort_Bulan')
+        tren_bulan = df_kpi_only.groupby(['Sort_Bulan', 'Periode'], as_index=False).agg({'Revenue': 'sum', 'SCO': 'count'}).rename(columns={'Revenue': 'Total Revenue', 'SCO': 'Total Transaksi'}).sort_values('Sort_Bulan')
         sort_order = tren_bulan['Periode'].tolist()
         
         b1, b2 = st.columns(2)
         with b1:
-            base_rev = alt.Chart(tren_bulan).encode(x=alt.X('Periode:N', sort=sort_order, title='Bulan', axis=alt.Axis(labelAngle=0, grid=False)))
-            area_rev = base_rev.mark_area(opacity=0.2, color=BRAND_CYAN, interpolate='monotone').encode(y=alt.Y('Total Revenue:Q', title='Pendapatan (Rp)'))
-            line_rev = base_rev.mark_line(color=BRAND_CYAN, strokeWidth=4, interpolate='monotone').encode(y='Total Revenue:Q')
-            points_rev = base_rev.mark_circle(color=BRAND_WHITE, size=120, opacity=1).encode(y='Total Revenue:Q', tooltip=['Periode', 'Total Revenue'])
-            st.altair_chart((area_rev + line_rev + points_rev).properties(height=350), use_container_width=True)
-            
+            base_rev = alt.Chart(tren_bulan).encode(x=alt.X('Periode:N', sort=sort_order, title='Bulan'))
+            st.altair_chart((base_rev.mark_area(opacity=0.2, color=BRAND_CYAN).encode(y='Total Revenue:Q') + base_rev.mark_line(color=BRAND_CYAN, strokeWidth=4).encode(y='Total Revenue:Q')).properties(height=350), use_container_width=True)
         with b2:
-            base_trx = alt.Chart(tren_bulan).encode(x=alt.X('Periode:N', sort=sort_order, title='Bulan', axis=alt.Axis(labelAngle=0, grid=False)))
-            area_trx = base_trx.mark_area(opacity=0.2, color=BRAND_GOLD, interpolate='monotone').encode(y=alt.Y('Total Transaksi:Q', title='Jumlah Resi'))
-            line_trx = base_trx.mark_line(color=BRAND_GOLD, strokeWidth=4, interpolate='monotone').encode(y='Total Transaksi:Q')
-            points_trx = base_trx.mark_circle(color=BRAND_WHITE, size=120, opacity=1).encode(y='Total Transaksi:Q', tooltip=['Periode', 'Total Transaksi'])
-            st.altair_chart((area_trx + line_trx + points_trx).properties(height=350), use_container_width=True)
+            base_trx = alt.Chart(tren_bulan).encode(x=alt.X('Periode:N', sort=sort_order, title='Bulan'))
+            st.altair_chart((base_trx.mark_area(opacity=0.2, color=BRAND_GOLD).encode(y='Total Transaksi:Q') + base_trx.mark_line(color=BRAND_GOLD, strokeWidth=4).encode(y='Total Transaksi:Q')).properties(height=350), use_container_width=True)
             
         st.markdown("---")
-        st.subheader("📋 Master Table Tren Bulanan")
         tabel_tren = tren_bulan.copy()
         tabel_tren['Total Revenue'] = tabel_tren['Total Revenue'].apply(format_rupiah)
-        
-        # FITUR BARU: Rendering AgGrid
-        render_aggrid(tabel_tren[['Periode', 'Total Transaksi', 'Total Revenue']])
+        tabel_tren.index = range(1, len(tabel_tren) + 1)
+        st.dataframe(style_top_row(tabel_tren[['Periode', 'Total Transaksi', 'Total Revenue']]), use_container_width=True)
 
 # ==========================================
-# TAB 8: EXECUTIVE SUMMARY (UPGRADED DENGAN AGGRID)
+# TAB 8: EXECUTIVE SUMMARY
 # ==========================================
 with tab8:
     st.header("🌐 Executive Summary (Master Global)")
-    st.markdown("<p style='color:#a8b2d1 !important;'>Tabel ini <b>kebal terhadap filter Sidebar</b>. Menarik SEMUA data dari SEMUA file untuk membandingkan kinerja antar pilar KPI secara menyeluruh.</p>", unsafe_allow_html=True)
-    
     tot_rev_global = df_global['Revenue'].sum()
     tot_resi_global = len(df_global)
     rekap_sco_global = df_global.groupby('SCO')['Revenue'].sum()
@@ -895,39 +665,12 @@ with tab8:
     g3.metric("👑 MVP SCO (OVERALL)", best_sco_global, f"{format_rupiah(best_sco_rev_global)} Contributed")
     
     st.markdown("<br>", unsafe_allow_html=True)
-    
-    st.subheader("📊 Komposisi Revenue SCO berdasarkan KPI")
     rekap_chart = df_global.groupby(['SCO', 'KPI'], as_index=False)['Revenue'].sum()
-    chart_global = alt.Chart(rekap_chart).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
-        x=alt.X('SCO:N', sort='-y', title='Nama SCO'),
-        y=alt.Y('Revenue:Q', title='Total Revenue (Rp)'),
-        color=alt.Color('KPI:N', scale=alt.Scale(range=BRAND_CATEGORICAL), title='Jenis KPI'),
-        tooltip=['SCO', 'KPI', 'Revenue']
+    chart_global = alt.Chart(rekap_chart).mark_bar().encode(
+        x=alt.X('SCO:N', sort='-y', title='Nama SCO'), y=alt.Y('Revenue:Q', title='Total Revenue (Rp)'),
+        color=alt.Color('KPI:N', scale=alt.Scale(range=BRAND_CATEGORICAL), title='Jenis KPI'), tooltip=['SCO', 'KPI', 'Revenue']
     ).properties(height=450)
     st.altair_chart(chart_global, use_container_width=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    
-    st.subheader("📋 Master Table Keseluruhan")
-    
-    pivot_resi = df_global.pivot_table(index='SCO', columns='KPI', values='Revenue', aggfunc='count', fill_value=0)
-    pivot_resi['Total Resi Akhir'] = pivot_resi.sum(axis=1)
-    
-    pivot_rev = df_global.pivot_table(index='SCO', columns='KPI', values='Revenue', aggfunc='sum', fill_value=0)
-    pivot_rev['Total Pendapatan Akhir'] = pivot_rev.sum(axis=1)
-    
-    pivot_resi.columns = [f"📦 Resi {c}" if c != 'Total Resi Akhir' else c for c in pivot_resi.columns]
-    pivot_rev.columns = [f"💰 Rev {c}" if c != 'Total Pendapatan Akhir' else c for c in pivot_rev.columns]
-    
-    global_rekap = pd.concat([pivot_resi, pivot_rev], axis=1).reset_index()
-    global_rekap = global_rekap.sort_values('Total Pendapatan Akhir', ascending=False)
-    
-    rev_cols = [c for c in global_rekap.columns if "Rev" in c or "Pendapatan" in c]
-    for c in rev_cols:
-        global_rekap[c] = global_rekap[c].apply(format_rupiah)
-        
-    # FITUR BARU: Rendering AgGrid
-    render_aggrid(global_rekap, height=500)
 
 # ==========================================
 # FOOTER
