@@ -311,7 +311,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "🏆 Top Customer", 
     f"👨‍💼 Kinerja SCO", 
     "⏰ Pola Waktu", 
-    "💳 Layanan",
+    "💳 Service & Payment methode",
     "📍 Pemetaan Destinasi",
     f"🚀 Tren {selected_kpi}",
     "🌐 Executive Summary"
