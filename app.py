@@ -101,11 +101,10 @@ if len(list_file_excel) == 0:
     st.error("Waduh, belum ada file Excel yang terdeteksi nih bro. Upload dulu ke GitHub ya!")
     st.stop()
 
-# UBAH 1: Dari Selectbox jadi Multiselect (Bisa pilih lebih dari 1 file)
 selected_files = st.sidebar.multiselect(
     "📂 Pilih File Periode (Bisa >1):", 
     options=list_file_excel,
-    default=list_file_excel # Defaultnya otomatis nampilin semua file yg ada
+    default=list_file_excel
 )
 
 if not selected_files:
@@ -114,7 +113,6 @@ if not selected_files:
 
 st.sidebar.success(f"Menampilkan {len(selected_files)} file aktif.")
 
-# UBAH 2: Fungsi load_data disesuaikan buat baca banyak file sekaligus
 @st.cache_data
 def load_data(file_paths):
     all_raw = []
@@ -153,14 +151,12 @@ def format_rupiah(val):
     return f"Rp {val:,.0f}".replace(",", ".")
 
 try:
-    # Load data mentah (Tuple dipakai biar Streamlit cache gak error baca list)
     df_raw, df_rata2_raw = load_data(tuple(selected_files))
     df_all = load_all_data(tuple(list_file_excel))
     
     df = df_raw.copy()
     df_rata2 = df_rata2_raw.copy()
 
-    # Parsing tanggal buat filter
     df['Date_Parsed'] = pd.to_datetime(df['Date'])
     min_date = df['Date_Parsed'].min().date()
     max_date = df['Date_Parsed'].max().date()
@@ -168,7 +164,6 @@ try:
     st.sidebar.markdown("---")
     st.sidebar.header("🔍 Filter Data (Drill-Down)")
     
-    # 1. Widget Kalender (Rentang Tanggal)
     date_range = st.sidebar.date_input(
         "📅 Rentang Tanggal", 
         value=(min_date, max_date), 
@@ -176,13 +171,11 @@ try:
         max_value=max_date
     )
     
-    # Handle kondisi kalau user milih 1 hari atau 2 hari
     if len(date_range) == 2:
         start_date, end_date = date_range
     else:
         start_date = end_date = date_range[0]
         
-    # 2. Widget Pilihan SCO
     list_sco = df['User id'].dropna().unique().tolist()
     selected_sco = st.sidebar.multiselect(
         "👨‍💼 Pilih SCO (Bisa >1):", 
@@ -191,34 +184,24 @@ try:
         help="Kosongkan buat nampilin semua SCO"
     )
 
-    # ==========================================
-    # LOGIKA FILTERING DATA
-    # ==========================================
-    # Eksekusi filter tanggal
     mask_date = (df['Date_Parsed'].dt.date >= start_date) & (df['Date_Parsed'].dt.date <= end_date)
     df_filtered = df[mask_date].copy()
     
-    # Eksekusi filter nama SCO (Kalau ada yang dipilih)
     if selected_sco:
         df_filtered = df_filtered[df_filtered['User id'].isin(selected_sco)]
         df_rata2 = df_rata2[df_rata2['User id'].isin(selected_sco)]
         
     st.sidebar.markdown("---")
 
-    # ==========================================
-    # HEADER UTAMA
-    # ==========================================
     st.title("📊 Dashboard Performa Pengiriman KP Grand Taruma")
     st.markdown("<p style='color:#a8b2d1 !important; font-size:1.2rem;'>(By Yusuf Zulkarnaen)</p>", unsafe_allow_html=True)
     st.markdown("<p style='color:#e2e8f0 !important;'>Rekapitulasi lengkap data operasional, performa tim, dan insight pelanggan.</p>", unsafe_allow_html=True)
     st.markdown("---")
 
-    # Kalau hasil filternya kosong, stop eksekusi tab
     if df_filtered.empty:
         st.warning("⚠️ Waduh, datanya kosong bro untuk filter yang lu pilih. Coba ganti rentang tanggal atau nama SCO-nya.")
         st.stop()
 
-    # Render Tabs
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📈 Dashboard Utama", 
         "🏆 Top Customer", 
@@ -338,7 +321,7 @@ try:
                 st.dataframe(top_con_tabel, use_container_width=True)
 
     # ==========================================
-    # TAB 3: KINERJA SCO
+    # TAB 3: KINERJA SCO (YANG UDAH DIBENERIN)
     # ==========================================
     with tab3:
         st.header("👨‍💼 Rata-Rata Hari Masuk & Produktivitas SCO")
@@ -348,25 +331,40 @@ try:
         else:
             df_rata2_clean = df_rata2.loc[:, ~df_rata2.columns.str.contains('^Unnamed')].copy()
             
-            # Ubah ke numerik dulu sebelum diagregasi
-            for col in ['Revenue', 'Rata_Pendapatan_Per_Hari', 'Hari_Masuk', 'Rata_Transaksi_Per_Hari']:
+            # 1. Ubah jadi numerik dulu
+            for col in ['Total_Connote', 'Revenue', 'Hari_Masuk']:
                 if col in df_rata2_clean.columns:
                     df_rata2_clean[col] = pd.to_numeric(df_rata2_clean[col], errors='coerce').fillna(0)
             
-            # UBAH 3: Agregasi biar SCO yang muncul di >1 file Excel datanya dirata-ratakan jadi 1 baris
-            df_rata2_clean = df_rata2_clean.groupby('User id', as_index=False).mean(numeric_only=True)
+            # 2. Aturan agregasi yang bener: DIJUMLAH (SUM) BUKAN DIRATA-RATA
+            agg_rules = {}
+            if 'Total_Connote' in df_rata2_clean.columns: agg_rules['Total_Connote'] = 'sum'
+            if 'Revenue' in df_rata2_clean.columns: agg_rules['Revenue'] = 'sum'
+            if 'Hari_Masuk' in df_rata2_clean.columns: agg_rules['Hari_Masuk'] = 'sum'
             
-            # Baru di-format setelah di-group
-            for col in ['Revenue', 'Rata_Pendapatan_Per_Hari']:
-                if col in df_rata2_clean.columns:
-                    df_rata2_clean[f"{col}_Num"] = df_rata2_clean[col] 
-                    df_rata2_clean[col] = df_rata2_clean[col].apply(format_rupiah)
-                    
-            if 'Rata_Transaksi_Per_Hari' in df_rata2_clean.columns:
-                df_rata2_clean['Rata_Transaksi_Per_Hari'] = df_rata2_clean['Rata_Transaksi_Per_Hari'].round(1)
-                
+            if agg_rules:
+                df_rata2_clean = df_rata2_clean.groupby('User id', as_index=False).agg(agg_rules)
+            
+            # 3. Hitung ulang rata-ratanya berdasarkan hasil penjumlahan gabungan bulan
             if 'Hari_Masuk' in df_rata2_clean.columns:
-                df_rata2_clean['Hari_Masuk'] = df_rata2_clean['Hari_Masuk'].round(0).astype(int)
+                if 'Total_Connote' in df_rata2_clean.columns:
+                    df_rata2_clean['Rata_Transaksi_Per_Hari'] = (df_rata2_clean['Total_Connote'] / df_rata2_clean['Hari_Masuk']).fillna(0).round(1)
+                if 'Revenue' in df_rata2_clean.columns:
+                    df_rata2_clean['Rata_Pendapatan_Per_Hari'] = (df_rata2_clean['Revenue'] / df_rata2_clean['Hari_Masuk']).fillna(0)
+            
+            # 4. Buat duplikat buat chart sebelum di-format ke Rupiah
+            if 'Rata_Pendapatan_Per_Hari' in df_rata2_clean.columns:
+                df_rata2_clean['Rata_Pendapatan_Per_Hari_Num'] = df_rata2_clean['Rata_Pendapatan_Per_Hari']
+            
+            # 5. Format tampilan biar rapi & gak ada koma di resi/hari
+            if 'Revenue' in df_rata2_clean.columns:
+                df_rata2_clean['Revenue'] = df_rata2_clean['Revenue'].apply(format_rupiah)
+            if 'Rata_Pendapatan_Per_Hari' in df_rata2_clean.columns:
+                df_rata2_clean['Rata_Pendapatan_Per_Hari'] = df_rata2_clean['Rata_Pendapatan_Per_Hari'].apply(format_rupiah)
+            if 'Total_Connote' in df_rata2_clean.columns:
+                df_rata2_clean['Total_Connote'] = df_rata2_clean['Total_Connote'].astype(int)
+            if 'Hari_Masuk' in df_rata2_clean.columns:
+                df_rata2_clean['Hari_Masuk'] = df_rata2_clean['Hari_Masuk'].astype(int)
 
             if 'Rata_Pendapatan_Per_Hari_Num' in df_rata2_clean.columns:
                 st.subheader("📊 Rata-Rata Pendapatan Harian Tiap Kasir")
