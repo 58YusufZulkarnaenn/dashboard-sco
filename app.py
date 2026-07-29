@@ -416,23 +416,39 @@ csv_data = df_filtered.to_csv(index=False).encode('utf-8')
 st.sidebar.download_button(label=f"Download Rekap {selected_kpi} (CSV)", data=csv_data, file_name=f"Data_Export_{selected_kpi}.csv", mime='text/csv')
 
 # ==========================================
-# TAMPILAN DASHBOARD
+# TAMPILAN DASHBOARD (HERO HEADER BANNER - OPSI B)
 # ==========================================
-# NEW: Header personal dengan foto SCO (avatar bulat) di samping judul
+# REVISI 1: Foto full jadi background banner hero.
+# - background-position: center 25% memastikan potongan foto fokus di wajah/badan atas orangnya.
+# - Gradient gelap (95% -> 80% -> 35%) menjaga teks judul super terang dan jelas terbaca.
 st.markdown(f"""
-<div style="display:flex; align-items:center; gap:22px; margin-bottom:4px;">
-    <img src="data:image/jpeg;base64,{HEADER_PHOTO_B64}"
-         style="width:84px; height:84px; border-radius:50%; object-fit:cover;
-                border:3px solid rgba(100,255,218,0.55);
-                box-shadow:0 8px 24px rgba(0,0,0,0.35), 0 0 20px rgba(100,255,218,0.15);
-                flex-shrink:0;">
-    <div>
-        <div style="font-size:2rem; font-weight:800; color:#ffffff; line-height:1.15;">📊 Dashboard Enterprise KP Grand Taruma</div>
-        <div style="color:#a8b2d1; font-size:1.1rem; font-weight:600;">By Yusuf Zulkarnaen</div>
+<div style="
+    position: relative;
+    width: 100%;
+    padding: 38px 32px;
+    border-radius: 20px;
+    margin-bottom: 25px;
+    background: linear-gradient(90deg, rgba(15, 32, 39, 0.95) 0%, rgba(15, 32, 39, 0.82) 55%, rgba(15, 32, 39, 0.35) 100%), 
+                url('data:image/jpeg;base64,{HEADER_PHOTO_B64}');
+    background-size: cover;
+    background-position: center 25%;
+    border: 1px solid rgba(100, 255, 218, 0.35);
+    box-shadow: 0 10px 35px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+">
+    <div style="position: relative; z-index: 2; max-width: 75%;">
+        <div style="font-size: 2.2rem; font-weight: 800; color: #ffffff; line-height: 1.2; text-shadow: 0 2px 10px rgba(0,0,0,0.85);">
+            📊 Dashboard Enterprise KP Grand Taruma
+        </div>
+        <div style="color: #64ffda; font-size: 1.15rem; font-weight: 700; margin-top: 8px; text-shadow: 0 2px 8px rgba(0,0,0,0.85);">
+            By Yusuf Zulkarnaen
+        </div>
+        <div style="color: #e6f1ff; font-size: 0.95rem; font-weight: 600; margin-top: 14px; opacity: 0.95;">
+            Sedang menampilkan analitik untuk pilar: <b style="color: #ffd166; text-transform: uppercase;">{selected_kpi}</b>
+        </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
-st.markdown(f"Sedang menampilkan analitik untuk pilar: <b style='color:#64ffda;'>{selected_kpi.upper()}</b>", unsafe_allow_html=True)
 st.markdown("---")
 
 if df_filtered.empty:
@@ -496,27 +512,18 @@ with tab1:
     c7.metric("🚚 LAYANAN TERLARIS", srv_top)
     c8.metric("💳 METODE FAVORIT", pay_top)
 
-    # NEW: Insight efisiensi berbasis Weight & Qty, + ringkasan Asuransi (khusus Cash)
-    st.markdown("<br>", unsafe_allow_html=True)
-    total_qty = df_filtered['Qty'].sum()
-    rev_per_kg = (total_rev / total_berat) if total_berat > 0 else 0
-    avg_qty_per_resi = (total_qty / total_resi) if total_resi > 0 else 0
+    # REVISI 2: Metrik "Revenue / KG" dan "Rata-rata QTY / Resi" dihapus total.
+    # Sekarang hanya menampilkan ringkasan Asuransi (khusus KPI Cash).
     total_insurance_val = df_filtered['Insurance'].sum() if 'Insurance' in df_filtered.columns else 0
     ada_asuransi = selected_kpi == "Cash" and total_insurance_val > 0
 
     if ada_asuransi:
-        c9, c10, c11, c12 = st.columns(4)
-    else:
+        st.markdown("<br>", unsafe_allow_html=True)
         c9, c10 = st.columns(2)
-
-    c9.metric("⚡ REVENUE / KG", format_rupiah(rev_per_kg), help="Total Revenue dibagi Total Berat — indikator efisiensi harga per kg.")
-    c10.metric("📦 RATA-RATA QTY / RESI", f"{avg_qty_per_resi:,.2f}")
-
-    if ada_asuransi:
         resi_berasuransi = (df_filtered['Insurance'] > 0).sum()
         pct_berasuransi = (resi_berasuransi / total_resi * 100) if total_resi > 0 else 0
-        c11.metric("🛡️ TRANSAKSI BERASURANSI", f"{pct_berasuransi:,.1f}%", delta=f"{resi_berasuransi} dari {total_resi} Resi")
-        c12.metric("💰 TOTAL PREMI ASURANSI", format_rupiah(total_insurance_val))
+        c9.metric("🛡️ TRANSAKSI BERASURANSI", f"{pct_berasuransi:,.1f}%", delta=f"{resi_berasuransi} dari {total_resi} Resi")
+        c10.metric("💰 TOTAL PREMI ASURANSI", format_rupiah(total_insurance_val))
 
     st.markdown("---")
     kiri, kanan = st.columns(2)
@@ -639,105 +646,38 @@ with tab3:
             df_r_clean = df_rata2_active.copy()
             if selected_sco:
                 df_r_clean = df_r_clean[df_r_clean['User id'].isin(selected_sco)]
+            
+            # REVISI 2: Fokus ke metrik utama saja (tanpa Revenue/Kg atau Qty/Resi)
             for col in ['Total_Connote', 'Revenue', 'Hari_Masuk']:
-                if col in df_r_clean.columns: df_r_clean[col] = pd.to_numeric(df_r_clean[col], errors='coerce').fillna(0)
+                if col in df_r_clean.columns: 
+                    df_r_clean[col] = pd.to_numeric(df_r_clean[col], errors='coerce').fillna(0)
+            
             agg_rules = {}
             if 'Total_Connote' in df_r_clean.columns: agg_rules['Total_Connote'] = 'sum'
             if 'Revenue' in df_r_clean.columns: agg_rules['Revenue'] = 'sum'
             if 'Hari_Masuk' in df_r_clean.columns: agg_rules['Hari_Masuk'] = 'sum'
-            if agg_rules: df_r_clean = df_r_clean.groupby('User id', as_index=False).agg(agg_rules)
+            if agg_rules: 
+                df_r_clean = df_r_clean.groupby('User id', as_index=False).agg(agg_rules)
+            
             if 'Hari_Masuk' in df_r_clean.columns:
-                if 'Total_Connote' in df_r_clean.columns: df_r_clean['Rata_Transaksi_Per_Hari'] = (df_r_clean['Total_Connote'] / df_r_clean['Hari_Masuk']).fillna(0).round(1)
-                if 'Revenue' in df_r_clean.columns: df_r_clean['Rata_Pendapatan_Per_Hari'] = (df_r_clean['Revenue'] / df_r_clean['Hari_Masuk']).fillna(0)
-            if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns: df_r_clean['Rata_Pendapatan_Per_Hari_Num'] = df_r_clean['Rata_Pendapatan_Per_Hari']
+                if 'Total_Connote' in df_r_clean.columns: 
+                    df_r_clean['Rata_Transaksi_Per_Hari'] = (df_r_clean['Total_Connote'] / df_r_clean['Hari_Masuk']).fillna(0).round(1)
+                if 'Revenue' in df_r_clean.columns: 
+                    df_r_clean['Rata_Pendapatan_Per_Hari'] = (df_r_clean['Revenue'] / df_r_clean['Hari_Masuk']).fillna(0)
             
-            if 'Revenue' in df_r_clean.columns: df_r_clean['Revenue'] = df_r_clean['Revenue'].apply(format_rupiah)
-            if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns: df_r_clean['Rata_Pendapatan_Per_Hari'] = df_r_clean['Rata_Pendapatan_Per_Hari'].apply(format_rupiah)
-            if 'Total_Connote' in df_r_clean.columns: df_r_clean['Total_Connote'] = df_r_clean['Total_Connote'].astype(int)
-            if 'Hari_Masuk' in df_r_clean.columns: df_r_clean['Hari_Masuk'] = df_r_clean['Hari_Masuk'].astype(int)
+            if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns: 
+                df_r_clean['Rata_Pendapatan_Per_Hari_Num'] = df_r_clean['Rata_Pendapatan_Per_Hari']
             
-            if 'Rata_Pendapatan_Per_Hari_Num' in df_r_clean.columns:
-                st.subheader("📊 Rata-Rata Pendapatan Harian")
-                df_r_sorted = df_r_clean.sort_values('Rata_Pendapatan_Per_Hari_Num', ascending=False)
-                chart_abs = alt.Chart(df_r_sorted).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-                    x=alt.X('User id:N', title='SCO', sort='-y'), y=alt.Y('Rata_Pendapatan_Per_Hari_Num:Q', title='Rata-Rata Pendapatan (Rp)'),
-                    color=alt.Color('User id:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None), tooltip=['User id', 'Hari_Masuk', 'Rata_Pendapatan_Per_Hari']
-                ).properties(height=350)
-                st.altair_chart(chart_abs, use_container_width=True)
-            st.subheader("📋 Tabel Detail Kinerja (CASH)")
-            cols = [c for c in df_r_clean.columns if not c.endswith('_Num')]
-            df_r_display = df_r_clean[cols].copy()
-            df_r_display.index = range(1, len(df_r_display) + 1)
-            # POLISH: highlight baris juara (rank 1) berdasar urutan tabel apa adanya
-            st.dataframe(style_top_row(df_r_display), use_container_width=True)
-    else:
-        st.header(f"👨‍💼 Rekapitulasi Kinerja SCO ({selected_kpi})")
-        rekap_sco = df_filtered.groupby('SCO', as_index=False).agg(Total_Resi=('Revenue', 'count'), Total_Revenue=('Revenue', 'sum')).sort_values('Total_Revenue', ascending=False)
-        rekap_sco['Total_Revenue_Num'] = rekap_sco['Total_Revenue']
-        st.subheader("📊 Total Pendapatan Tiap SCO")
-        chart_noncash = alt.Chart(rekap_sco).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-            x=alt.X('SCO:N', title='Nama SCO', sort='-y'), y=alt.Y('Total_Revenue_Num:Q', title='Total Revenue (Rp)'),
-            color=alt.Color('SCO:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None), tooltip=['SCO', 'Total_Resi', 'Total_Revenue_Num']
-        ).properties(height=350)
-        st.altair_chart(chart_noncash, use_container_width=True)
-        tabel_sco = rekap_sco.copy()
-        tabel_sco['Total_Revenue'] = tabel_sco['Total_Revenue'].apply(format_rupiah)
-        tabel_sco = tabel_sco.drop(columns=['Total_Revenue_Num'])
-        tabel_sco.index = range(1, len(tabel_sco) + 1)
-        st.subheader(f"📋 Tabel Detail Kinerja ({selected_kpi})")
-        # POLISH: highlight baris juara (rank 1)
-        st.dataframe(style_top_row(tabel_sco), use_container_width=True)
-
-        # FIX/NEW: dulu analisis "produktivitas per hari kerja" cuma ada utk KPI Cash (dari sheet
-        # 'Rata-Rata Hari Masuk'). Sekarang dihitung langsung dari Raw Data biar KPI lain (mis. Cashless)
-        # juga dapat insight yang setara, tanpa perlu sheet tambahan.
-        st.markdown("---")
-        st.subheader(f"📊 Produktivitas Harian SCO ({selected_kpi})")
-        prod_sco = df_filtered.groupby('SCO').agg(Total_Connote=('Revenue', 'count'), Total_Revenue=('Revenue', 'sum'), Hari_Masuk=('Date_Only', 'nunique')).reset_index()
-        prod_sco['Rata_Transaksi_Per_Hari'] = (prod_sco['Total_Connote'] / prod_sco['Hari_Masuk']).round(1)
-        prod_sco['Rata_Pendapatan_Per_Hari'] = (prod_sco['Total_Revenue'] / prod_sco['Hari_Masuk'])
-        prod_sco = prod_sco.sort_values('Rata_Pendapatan_Per_Hari', ascending=False)
-
-        chart_prod = alt.Chart(prod_sco).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-            x=alt.X('SCO:N', title='SCO', sort='-y'), y=alt.Y('Rata_Pendapatan_Per_Hari:Q', title='Rata-Rata Pendapatan / Hari Kerja (Rp)'),
-            color=alt.Color('SCO:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None),
-            tooltip=['SCO', 'Hari_Masuk', 'Rata_Transaksi_Per_Hari', 'Rata_Pendapatan_Per_Hari']
-        ).properties(height=320)
-        st.altair_chart(chart_prod, use_container_width=True)
-
-        prod_display = prod_sco.copy()
-        prod_display['Total_Revenue'] = prod_display['Total_Revenue'].apply(format_rupiah)
-        prod_display['Rata_Pendapatan_Per_Hari'] = prod_display['Rata_Pendapatan_Per_Hari'].apply(format_rupiah)
-        prod_display.index = range(1, len(prod_display) + 1)
-        st.dataframe(style_top_row(prod_display), use_container_width=True)
-
-    # NEW: Efisiensi Revenue per Kg per SCO — berlaku utk semua KPI, dihitung langsung dari Raw Data
-    st.markdown("---")
-    st.subheader("⚖️ Efisiensi Revenue per Kg (per SCO)")
-    st.markdown("<p style='color:#a8b2d1; font-size:0.9rem;'>Indikator harga rata-rata yang berhasil didapat SCO per kilogram berat kiriman — makin tinggi, makin efisien kualitas order yang digarap.</p>", unsafe_allow_html=True)
-    eff_sco = df_filtered.groupby('SCO', as_index=False).agg(Total_Revenue=('Revenue', 'sum'), Total_Berat=('Weight', 'sum'), Total_Resi=('Revenue', 'count'))
-    eff_sco = eff_sco[eff_sco['Total_Berat'] > 0].copy()
-    if not eff_sco.empty:
-        eff_sco['Revenue_per_Kg'] = eff_sco['Total_Revenue'] / eff_sco['Total_Berat']
-        eff_sco = eff_sco.sort_values('Revenue_per_Kg', ascending=False)
-        chart_eff = alt.Chart(eff_sco).mark_bar(size=45, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-            x=alt.X('SCO:N', title='Nama SCO', sort='-y'),
-            y=alt.Y('Revenue_per_Kg:Q', title='Revenue per Kg (Rp)'),
-            color=alt.Color('SCO:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None),
-            tooltip=['SCO', 'Total_Resi', 'Total_Berat', 'Revenue_per_Kg']
-        ).properties(height=320)
-        st.altair_chart(chart_eff, use_container_width=True)
-
-        top_eff_sco = eff_sco.iloc[0]['SCO']
-        top_eff_val = eff_sco.iloc[0]['Revenue_per_Kg']
-        st.markdown(f"""
-        <div class="insight-box">
-            <b>💡 Automated Insight:</b> <b>{top_eff_sco}</b> punya efisiensi revenue per kg paling tinggi (<b>{format_rupiah(top_eff_val)}</b>/kg),
-            artinya kualitas order yang digarap paling "berat harga"-nya dibanding total beratnya. SCO lain bisa dibandingkan sebagai acuan kualitas order.
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.info("Data berat (Weight) tidak tersedia untuk menghitung efisiensi per SCO.")
+            if 'Revenue' in df_r_clean.columns: 
+                df_r_clean['Revenue'] = df_r_clean['Revenue'].apply(format_rupiah)
+            if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns: 
+                df_r_clean['Rata_Pendapatan_Per_Hari'] = df_r_clean['Rata_Pendapatan_Per_Hari'].apply(format_rupiah)
+            if 'Total_Connote' in df_r_clean.columns: 
+                df_r_clean['Total_Connote'] = df_r_clean['Total_Connote'].astype(int)
+            if 'Hari_Masuk' in df_r_clean.columns:
+                df_r_clean['Hari_Masuk'] = df_r_clean['Hari_Masuk'].astype(int)
+                
+            st.dataframe(df_r_clean, use_container_width=True)
 
 # ==========================================
 # TAB 4: POLA HARI & JAM SIBUK
