@@ -29,7 +29,7 @@ try:
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📈 Dashboard Utama", 
         "🏆 Top Customer", 
-        "👨‍💼 Kinerja & Absensi", 
+        "👨‍💼 Kinerja SCO", 
         "📍 Area & Pola Sibuk", 
         "💳 Layanan & Payment"
     ])
