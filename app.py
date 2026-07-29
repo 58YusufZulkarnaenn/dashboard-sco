@@ -75,15 +75,12 @@ def load_unified_data(file_paths):
             if "cashless" in filename: kpi_type = "Cashless"
             elif "kredit auto" in filename: kpi_type = "Kredit Auto"
             elif "kredit manual" in filename: kpi_type = "Kredit Manual"
-            else: kpi_type = "Cash" # Default ke Cash
+            else: kpi_type = "Cash"
                 
             xls = pd.ExcelFile(f)
             
-            # 1. LOAD RAW DATA
             if "Raw Data" in xls.sheet_names:
                 df = pd.read_excel(xls, "Raw Data")
-                
-                # BUG FIXED DISINI: Kunci indexnya dulu biar baris data nggak jadi NaN!
                 df_std = pd.DataFrame(index=df.index) 
                 
                 df_std['KPI'] = kpi_type
@@ -115,7 +112,7 @@ def load_unified_data(file_paths):
                     
                 all_raw.append(df_std)
             
-            # 2. LOAD RATA-RATA (Khusus Cash)
+            # Load Rata-Rata Khusus Cash
             if kpi_type == "Cash" and "Rata-Rata Hari Masuk" in xls.sheet_names:
                 df_r = pd.read_excel(xls, "Rata-Rata Hari Masuk")
                 all_rata2.append(df_r)
@@ -132,7 +129,7 @@ def format_rupiah(val):
     return f"Rp {val:,.0f}".replace(",", ".")
 
 # ==========================================
-# SIDEBAR KIRI: PENGATURAN
+# SIDEBAR KIRI: PENGATURAN & FILTER
 # ==========================================
 st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3063/3063822.png", width=100)
 st.sidebar.header("📅 Pengaturan Data")
@@ -144,34 +141,22 @@ if len(list_file_excel) == 0:
     st.error("Belum ada file Excel yang terdeteksi bro. Upload filenya dulu!")
     st.stop()
 
-# Load Data Master secara global
-df_master, df_rata2_master = load_unified_data(tuple(list_file_excel))
-
-if df_master.empty:
+# 1. LOAD GLOBAL MASTER (Khusus buat Tab 7 yang kebal filter)
+df_global, _ = load_unified_data(tuple(list_file_excel))
+if df_global.empty:
     st.error("Gagal membaca data dari file Excel. Pastikan sheet 'Raw Data' ada di dalam file.")
     st.stop()
-
-df_master = df_master.dropna(subset=['Date', 'SCO'])
-df_master['Date_Only'] = df_master['Date'].dt.date
 
 st.sidebar.markdown("---")
 st.sidebar.header("🔍 Filter Analytics")
 
-# 1. PILIH KPI (Cuma bisa 1)
-available_kpis = df_master['KPI'].unique().tolist()
+# 2. PILIH KPI
+available_kpis = df_global['KPI'].unique().tolist()
 selected_kpi = st.sidebar.selectbox("📊 Pilih Pilar KPI:", options=available_kpis)
 
-# Filter Master Data berdasarkan KPI yang dipilih untuk setting min-max kalender
-df_kpi_only = df_master[df_master['KPI'] == selected_kpi]
-if df_kpi_only.empty:
-    st.warning("Data untuk KPI ini kosong.")
-    st.stop()
-
-# --- TAMBAHAN FILTER FILE/BULAN ---
-# Karena 1 file Excel mewakili 1 bulan, kita bikin dropdown buat milih file/bulannya
+# 3. PILIH FILE BERDASARKAN KPI YANG DIPILIH
 list_file_kpi = [f for f in list_file_excel if selected_kpi.lower() in f.lower() or (selected_kpi == "Cash" and "cashless" not in f.lower() and "kredit" not in f.lower())]
 
-# Dropdown multiselect buat milih bulan
 selected_files_kpi = st.sidebar.multiselect(
     f"📂 Pilih File {selected_kpi} (Bisa >1):", 
     options=list_file_kpi,
@@ -182,27 +167,36 @@ if not selected_files_kpi:
     st.sidebar.warning(f"Pilih minimal 1 file data {selected_kpi} dulu bro!")
     st.stop()
 
-# Load ulang df_master khusus untuk file yang dipilih di filter bulan ini
-df_master_filtered, _ = load_unified_data(tuple(selected_files_kpi))
-df_kpi_only = df_master_filtered[df_master_filtered['KPI'] == selected_kpi]
-# ---------------------------------
+# 4. LOAD ACTIVE MASTER (Berdasarkan file yang dicentang)
+df_active, df_rata2_active = load_unified_data(tuple(selected_files_kpi))
 
+# INISIALISASI DATE_ONLY (Ini yang tadi bikin error)
+df_active = df_active.dropna(subset=['Date', 'SCO'])
+df_active['Date_Only'] = df_active['Date'].dt.date
+
+# Kunci data cuma di KPI yang aktif
+df_kpi_only = df_active[df_active['KPI'] == selected_kpi]
+
+if df_kpi_only.empty:
+    st.warning("Data untuk KPI ini kosong pada file yang dipilih.")
+    st.stop()
+
+# 5. RENTANG TANGGAL (KALENDER)
 min_date = df_kpi_only['Date_Only'].min()
 max_date = df_kpi_only['Date_Only'].max()
 
-# 2. RENTANG TANGGAL
 date_range = st.sidebar.date_input("📅 Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_value=max_date)
 if len(date_range) == 2:
     start_date, end_date = date_range
 else:
     start_date = end_date = date_range[0]
     
-# 3. NAMA SCO
+# 6. NAMA SCO
 list_sco = df_kpi_only['SCO'].dropna().unique().tolist()
 selected_sco = st.sidebar.multiselect("👨‍💼 Pilih SCO (Bisa >1):", options=list_sco, default=[], help="Kosongkan buat nampilin semua")
 
 # ==========================================
-# EKSEKUSI FILTER UTAMA (TAB 1-5)
+# EKSEKUSI FILTER UTAMA (TAB 1-6)
 # ==========================================
 mask_date = (df_kpi_only['Date_Only'] >= start_date) & (df_kpi_only['Date_Only'] <= end_date)
 df_filtered = df_kpi_only[mask_date].copy()
@@ -282,10 +276,7 @@ with tab1:
         st.altair_chart(chart_sco, use_container_width=True)
 
 # ==========================================
-# TAB 2: TOP CUSTOMER
-# ==========================================
-# ==========================================
-# TAB 2: TOP CUSTOMER
+# TAB 2: TOP CUSTOMER (DESAIN ORIGINAL!)
 # ==========================================
 with tab2:
     st.header(f"🏆 Analisis Top Customer ({selected_kpi})")
@@ -328,18 +319,17 @@ with tab2:
             top_con_tabel['Total Belanja'] = top_con_tabel['Total Belanja'].apply(format_rupiah)
             top_con_tabel.index = range(1, len(top_con_tabel) + 1)
             st.dataframe(top_con_tabel, use_container_width=True)
-            
+
 # ==========================================
-# TAB 3: KINERJA SCO (LOGIKA CERDAS)
+# TAB 3: KINERJA SCO
 # ==========================================
 with tab3:
     if selected_kpi == "Cash":
         st.header("👨‍💼 Rata-Rata Hari Masuk & Produktivitas SCO")
-        if df_rata2_master.empty:
+        if df_rata2_active.empty:
             st.info("Data sheet 'Rata-Rata Hari Masuk' tidak ditemukan di file Cash ini.")
         else:
-            # Filter rata-rata sesuai SCO yang dipilih di sidebar
-            df_r_clean = df_rata2_master.copy()
+            df_r_clean = df_rata2_active.copy()
             if selected_sco:
                 df_r_clean = df_r_clean[df_r_clean['User id'].isin(selected_sco)]
             
@@ -347,7 +337,6 @@ with tab3:
                 if col in df_r_clean.columns:
                     df_r_clean[col] = pd.to_numeric(df_r_clean[col], errors='coerce').fillna(0)
                     
-            # Jumlahkan dulu jika ada lebih dari 1 file cash
             agg_rules = {}
             if 'Total_Connote' in df_r_clean.columns: agg_rules['Total_Connote'] = 'sum'
             if 'Revenue' in df_r_clean.columns: agg_rules['Revenue'] = 'sum'
@@ -365,7 +354,6 @@ with tab3:
             if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns:
                 df_r_clean['Rata_Pendapatan_Per_Hari_Num'] = df_r_clean['Rata_Pendapatan_Per_Hari']
                 
-            # Formatting
             if 'Revenue' in df_r_clean.columns: df_r_clean['Revenue'] = df_r_clean['Revenue'].apply(format_rupiah)
             if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns: df_r_clean['Rata_Pendapatan_Per_Hari'] = df_r_clean['Rata_Pendapatan_Per_Hari'].apply(format_rupiah)
             if 'Total_Connote' in df_r_clean.columns: df_r_clean['Total_Connote'] = df_r_clean['Total_Connote'].astype(int)
@@ -384,7 +372,6 @@ with tab3:
             st.dataframe(df_r_clean[cols], use_container_width=True)
             
     else:
-        # TAMPILAN KHUSUS SELAIN CASH (Hanya Total Resi & Total Revenue)
         st.header(f"👨‍💼 Rekapitulasi Kinerja SCO ({selected_kpi})")
         st.markdown("<p style='color:#a8b2d1 !important;'>Catatan: Rata-rata hari masuk tidak dihitung pada KPI ini untuk menjaga keakuratan evaluasi kinerja.</p>", unsafe_allow_html=True)
         
@@ -392,7 +379,6 @@ with tab3:
             Total_Resi=('Revenue', 'count'), Total_Revenue=('Revenue', 'sum')
         ).sort_values('Total_Revenue', ascending=False)
         
-        # Bikin duplikat buat chart
         rekap_sco['Total_Revenue_Num'] = rekap_sco['Total_Revenue']
         
         st.subheader("📊 Total Pendapatan Tiap Kasir")
@@ -402,7 +388,6 @@ with tab3:
         ).properties(height=350)
         st.altair_chart(chart_noncash, use_container_width=True)
         
-        # Formatting buat ditampilin di tabel
         tabel_sco = rekap_sco.copy()
         tabel_sco['Total_Revenue'] = tabel_sco['Total_Revenue'].apply(format_rupiah)
         tabel_sco = tabel_sco.drop(columns=['Total_Revenue_Num'])
@@ -464,7 +449,7 @@ with tab5:
         st.altair_chart(chart_pay, use_container_width=True)
 
 # ==========================================
-# TAB 6: TREN LINTAS BULAN (Sesuai KPI)
+# TAB 6: TREN LINTAS BULAN
 # ==========================================
 with tab6:
     st.header(f"🚀 Pertumbuhan Bisnis - {selected_kpi.upper()}")
@@ -494,31 +479,24 @@ with tab6:
             st.altair_chart((area_trx + line_trx + points_trx).properties(height=350), use_container_width=True)
 
 # ==========================================
-# TAB 7: REKAP GLOBAL SCO (KEBAL FILTER)
+# TAB 7: REKAP GLOBAL SCO
 # ==========================================
 with tab7:
     st.header("🌐 Akumulasi Keseluruhan (Master Summary)")
     st.markdown("<p style='color:#a8b2d1 !important;'>Tabel ini <b>kebal terhadap filter Sidebar</b>. Menarik SEMUA data dari SEMUA file yang di-upload untuk melihat total pencapaian masing-masing SCO di setiap pilar KPI.</p>", unsafe_allow_html=True)
     
-    # 1. Pivot Jumlah Resi (Volume)
-    pivot_resi = df_master.pivot_table(index='SCO', columns='KPI', values='Revenue', aggfunc='count', fill_value=0)
+    pivot_resi = df_global.pivot_table(index='SCO', columns='KPI', values='Revenue', aggfunc='count', fill_value=0)
     pivot_resi['Total Semua Resi'] = pivot_resi.sum(axis=1)
     
-    # 2. Pivot Total Pendapatan (Revenue)
-    pivot_rev = df_master.pivot_table(index='SCO', columns='KPI', values='Revenue', aggfunc='sum', fill_value=0)
+    pivot_rev = df_global.pivot_table(index='SCO', columns='KPI', values='Revenue', aggfunc='sum', fill_value=0)
     pivot_rev['Total Pendapatan Akhir'] = pivot_rev.sum(axis=1)
     
-    # Prefix nama kolom biar jelas saat digabung
     pivot_resi.columns = [f"📦 Resi {c}" if c != 'Total Semua Resi' else c for c in pivot_resi.columns]
     pivot_rev.columns = [f"💰 Rev {c}" if c != 'Total Pendapatan Akhir' else c for c in pivot_rev.columns]
     
-    # 3. Gabungkan kedua Pivot
     global_rekap = pd.concat([pivot_resi, pivot_rev], axis=1).reset_index()
-    
-    # Sortir berdasarkan yang pendapatannya paling tinggi
     global_rekap = global_rekap.sort_values('Total Pendapatan Akhir', ascending=False)
     
-    # 4. Format jadi Rupiah buat kolom Revenue
     rev_cols = [c for c in global_rekap.columns if "Rev" in c or "Pendapatan" in c]
     for c in rev_cols:
         global_rekap[c] = global_rekap[c].apply(format_rupiah)
