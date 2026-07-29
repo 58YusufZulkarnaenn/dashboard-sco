@@ -167,6 +167,26 @@ if df_kpi_only.empty:
     st.warning("Data untuk KPI ini kosong.")
     st.stop()
 
+# --- TAMBAHAN FILTER FILE/BULAN ---
+# Karena 1 file Excel mewakili 1 bulan, kita bikin dropdown buat milih file/bulannya
+list_file_kpi = [f for f in list_file_excel if selected_kpi.lower() in f.lower() or (selected_kpi == "Cash" and "cashless" not in f.lower() and "kredit" not in f.lower())]
+
+# Dropdown multiselect buat milih bulan
+selected_files_kpi = st.sidebar.multiselect(
+    f"📂 Pilih File {selected_kpi} (Bisa >1):", 
+    options=list_file_kpi,
+    default=list_file_kpi
+)
+
+if not selected_files_kpi:
+    st.sidebar.warning(f"Pilih minimal 1 file data {selected_kpi} dulu bro!")
+    st.stop()
+
+# Load ulang df_master khusus untuk file yang dipilih di filter bulan ini
+df_master_filtered, _ = load_unified_data(tuple(selected_files_kpi))
+df_kpi_only = df_master_filtered[df_master_filtered['KPI'] == selected_kpi]
+# ---------------------------------
+
 min_date = df_kpi_only['Date_Only'].min()
 max_date = df_kpi_only['Date_Only'].max()
 
@@ -264,31 +284,51 @@ with tab1:
 # ==========================================
 # TAB 2: TOP CUSTOMER
 # ==========================================
+# ==========================================
+# TAB 2: TOP CUSTOMER
+# ==========================================
 with tab2:
     st.header(f"🏆 Analisis Top Customer ({selected_kpi})")
-    df_cust = df_filtered[(df_filtered['Customer'] != '-') & (df_filtered['Customer'].notna())]
+    df_cust = df_filtered[df_filtered['Customer'] != '-']
+    
     if df_cust.empty:
-        st.info("Tidak ada data nama Customer di periode ini.")
+        st.info("Tidak ada data Customer (Shipper Name) di rentang waktu/SCO ini.")
     else:
         col_rev, col_con = st.columns(2)
         with col_rev:
-            st.subheader("🥇 Top 10 (Berdasarkan Revenue)")
+            st.subheader("🥇 Top 10 Customer (By Revenue)")
             top_rev = df_cust.groupby('Customer', as_index=False).agg({'Revenue':'sum', 'SCO':'count'}).rename(columns={'Revenue':'Total Belanja', 'SCO':'Total Resi'}).sort_values(by='Total Belanja', ascending=False).head(10)
+            
             chart_rev = alt.Chart(top_rev).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5).encode(
-                x=alt.X('Total Belanja:Q', title='Revenue (Rp)'), y=alt.Y('Customer:N', sort='-x', title='Customer'),
-                color=alt.Color('Total Belanja:Q', scale=alt.Scale(scheme='blues'), legend=None), tooltip=['Customer', 'Total Belanja', 'Total Resi']
+                x=alt.X('Total Belanja:Q', title='Total Revenue (Rp)'),
+                y=alt.Y('Customer:N', sort='-x', title='Customer'),
+                color=alt.Color('Total Belanja:Q', scale=alt.Scale(scheme='blues'), legend=None),
+                tooltip=['Customer', 'Total Belanja', 'Total Resi']
             ).properties(height=400)
             st.altair_chart(chart_rev, use_container_width=True)
             
+            top_rev_tabel = top_rev.copy()
+            top_rev_tabel['Total Belanja'] = top_rev_tabel['Total Belanja'].apply(format_rupiah)
+            top_rev_tabel.index = range(1, len(top_rev_tabel) + 1)
+            st.dataframe(top_rev_tabel, use_container_width=True)
+
         with col_con:
-            st.subheader("🔢 Top 10 (Berdasarkan Resi)")
+            st.subheader("🔢 Top 10 Customer (By Connote)")
             top_con = df_cust.groupby('Customer', as_index=False).agg({'SCO':'count', 'Revenue':'sum'}).rename(columns={'SCO':'Total Resi', 'Revenue':'Total Belanja'}).sort_values(by='Total Resi', ascending=False).head(10)
+            
             chart_con = alt.Chart(top_con).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5).encode(
-                x=alt.X('Total Resi:Q', title='Transaksi (Resi)'), y=alt.Y('Customer:N', sort='-x', title='Customer'),
-                color=alt.Color('Total Resi:Q', scale=alt.Scale(scheme='oranges'), legend=None), tooltip=['Customer', 'Total Resi', 'Total Belanja']
+                x=alt.X('Total Resi:Q', title='Total Transaksi (Resi)'),
+                y=alt.Y('Customer:N', sort='-x', title='Customer'),
+                color=alt.Color('Total Resi:Q', scale=alt.Scale(scheme='oranges'), legend=None),
+                tooltip=['Customer', 'Total Resi', 'Total Belanja']
             ).properties(height=400)
             st.altair_chart(chart_con, use_container_width=True)
-
+            
+            top_con_tabel = top_con.copy()
+            top_con_tabel['Total Belanja'] = top_con_tabel['Total Belanja'].apply(format_rupiah)
+            top_con_tabel.index = range(1, len(top_con_tabel) + 1)
+            st.dataframe(top_con_tabel, use_container_width=True)
+            
 # ==========================================
 # TAB 3: KINERJA SCO (LOGIKA CERDAS)
 # ==========================================
