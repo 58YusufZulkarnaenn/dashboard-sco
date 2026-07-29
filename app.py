@@ -522,13 +522,16 @@ with tab5:
 # ==========================================
 # TAB 6: PEMETAAN DESTINASI (TANPA INSTALL)
 # ==========================================
+# ==========================================
+# TAB 6: PEMETAAN DESTINASI (3D HEAT-PILLAR)
+# ==========================================
 with tab6:
     st.header(f"📍 Analisis Wilayah Destinasi ({selected_kpi})")
     df_dest = df_filtered[df_filtered['Destination'] != '-']
     if not df_dest.empty:
         dest_df = df_dest.groupby('Destination', as_index=False).agg({'Revenue': 'sum', 'SCO': 'count'}).rename(columns={'SCO': 'Total Resi'}).sort_values('Total Resi', ascending=False)
         
-        # --- 1. KAMUS KOORDINAT LENGKAP (Gak perlu Geopy) ---
+        # --- 1. KAMUS KOORDINAT LENGKAP ---
         CITY_COORDS = {
             'JAKARTA': [-6.2088, 106.8456], 'BEKASI': [-6.2383, 106.9756], 
             'BOGOR': [-6.5971, 106.7932], 'DEPOK': [-6.4025, 106.7942], 
@@ -549,7 +552,7 @@ with tab6:
             'MEDAN SUNGGAL': [3.5786, 98.6256]
         }
         
-        # --- 2. SISTEM PETA PREMIUM PYDECK ---
+        # --- 2. SISTEM PETA PREMIUM PYDECK (3D PILAR) ---
         dest_df['lat'] = dest_df['Destination'].apply(lambda x: CITY_COORDS.get(x, [None, None])[0])
         dest_df['lon'] = dest_df['Destination'].apply(lambda x: CITY_COORDS.get(x, [None, None])[1])
         
@@ -557,30 +560,46 @@ with tab6:
         
         if not map_df.empty:
             st.subheader("🗺️ Peta 3D Persebaran Logistik")
-            st.markdown("<p style='color:#a8b2d1; font-size:0.9rem;'>Besar cahaya titik menandakan tingginya jumlah resi. (Bisa di-zoom & di-geser)</p>", unsafe_allow_html=True)
+            st.markdown("<p style='color:#a8b2d1; font-size:0.9rem;'>Warna merah muda dan tinggi pilar menandakan tingginya jumlah resi. (Bisa di-zoom, geser, klik kanan tahan untuk memutar 3D)</p>", unsafe_allow_html=True)
             
-            # Bikin radius (ukuran titik) proporsional sama jumlah resi
-            map_df['radius'] = map_df['Total Resi'] * 800 
-            map_df['radius'] = map_df['radius'].clip(lower=4000, upper=60000) # Biar ga kegedean/kekecilan
+            # Logika pewarnaan otomatis (Gradasi Biru ke Merah)
+            max_resi = map_df['Total Resi'].max()
+            min_resi = map_df['Total Resi'].min()
+            
+            def get_color(resi):
+                if max_resi == min_resi:
+                    norm = 0.5
+                else:
+                    norm = (resi - min_resi) / (max_resi - min_resi)
+                
+                # RGB Transisi: Cyan [100, 255, 218] ke Merah Muda/Pink [255, 50, 100]
+                r = int(100 + (155 * norm))
+                g = int(255 - (205 * norm))
+                b = int(218 - (118 * norm))
+                return [r, g, b, 220] # 220 itu opacity biar agak transparan
+                
+            map_df['color'] = map_df['Total Resi'].apply(get_color)
             
             layer = pdk.Layer(
-                'ScatterplotLayer',
+                'ColumnLayer',  # Pake pilar 3D bukan lingkaran gepeng
                 data=map_df,
                 get_position='[lon, lat]',
-                get_radius='radius',
-                get_fill_color='[100, 255, 218, 140]', # Warna Neon Cyan
-                get_line_color='[255, 255, 255]',
+                get_elevation='Total Resi',
+                elevation_scale=1000, # Bikin pilarnya cukup menjulang
+                radius=10000, # Lebar pilar fix 10km biar Jakarta ga nutupin kota lain
+                get_fill_color='color',
                 pickable=True,
-                auto_highlight=True
+                auto_highlight=True,
+                extruded=True
             )
             
-            # Kamera awal menghadap pulau Jawa
-            view_state = pdk.ViewState(latitude=-6.2, longitude=110.0, zoom=5, pitch=45)
+            # Kamera dibikin lebih miring (pitch=50) biar 3D-nya berasa
+            view_state = pdk.ViewState(latitude=-6.2, longitude=110.0, zoom=5, pitch=50, bearing=15)
             
             r = pdk.Deck(
                 layers=[layer], initial_view_state=view_state,
                 tooltip={"text": "📍 {Destination}\n📦 Resi: {Total Resi}\n💰 Rev: Rp {Revenue}"},
-                map_style='dark' # Ini kunci biar petanya nongol bro!
+                map_style='dark'
             )
             st.pydeck_chart(r)
         else:
