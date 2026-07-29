@@ -519,15 +519,16 @@ with tab5:
 # ==========================================
 # TAB 6: PEMETAAN DESTINASI (WITH 3D MAP)
 # ==========================================
+# ==========================================
+# TAB 6: PEMETAAN DESTINASI (TANPA INSTALL)
+# ==========================================
 with tab6:
     st.header(f"📍 Analisis Wilayah Destinasi ({selected_kpi})")
     df_dest = df_filtered[df_filtered['Destination'] != '-']
     if not df_dest.empty:
         dest_df = df_dest.groupby('Destination', as_index=False).agg({'Revenue': 'sum', 'SCO': 'count'}).rename(columns={'SCO': 'Total Resi'}).sort_values('Total Resi', ascending=False)
         
-        # --- 1. KAMUS KOORDINAT (INI BAGIAN TUGAS LU NANTI BRO) ---
-        # Kalau ada kota yang belum muncul di peta, lu tinggal Googling "Latitude Longitude [Nama Kota]" 
-        # Terus masukin ke list di bawah ini dengan format 'NAMA KOTA': [Latitude, Longitude]
+        # --- 1. KAMUS KOORDINAT LENGKAP (Gak perlu Geopy) ---
         CITY_COORDS = {
             'JAKARTA': [-6.2088, 106.8456], 'BEKASI': [-6.2383, 106.9756], 
             'BOGOR': [-6.5971, 106.7932], 'DEPOK': [-6.4025, 106.7942], 
@@ -537,11 +538,18 @@ with tab6:
             'MEDAN': [3.5952, 98.6722], 'BALI': [-8.4095, 115.1889],
             'SOLO': [-7.5666, 110.8266], 'YOGYAKARTA': [-7.7956, 110.3695],
             'MALANG': [-7.9839, 112.6214], 'MAKASSAR': [-5.1477, 119.4327],
-            'BANDA ACEH': [5.5483, 95.3238], 'MAGELANG': [-7.4797, 110.2177]
+            'BANDA ACEH': [5.5483, 95.3238], 'MAGELANG': [-7.4797, 110.2177],
+            'CIREBON': [-6.7320, 108.5523], 'KENDARI': [-3.9985, 122.5127],
+            'AMBON': [-3.6954, 128.1814], 'JAYAPURA': [-2.5337, 140.7181],
+            'TARAKAN': [3.3148, 117.5925], 'BANDAR LAMPUNG': [-5.4500, 105.2667],
+            'PALEMBANG': [-2.9909, 104.7566], 'PEKANBARU': [0.5333, 101.4500],
+            'PADANG': [-0.9471, 100.3690], 'BANJARMASIN': [-3.3167, 114.5901],
+            'BALIKPAPAN': [-1.2379, 116.8529], 'PONTIANAK': [-0.0227, 109.3333],
+            'PENJARINGAN': [-6.1283, 106.7865], 'KELAPA DUA': [-6.2372, 106.6143],
+            'MEDAN SUNGGAL': [3.5786, 98.6256]
         }
         
         # --- 2. SISTEM PETA PREMIUM PYDECK ---
-        # Cocokin nama destinasi sama koordinat
         dest_df['lat'] = dest_df['Destination'].apply(lambda x: CITY_COORDS.get(x, [None, None])[0])
         dest_df['lon'] = dest_df['Destination'].apply(lambda x: CITY_COORDS.get(x, [None, None])[1])
         
@@ -572,11 +580,11 @@ with tab6:
             r = pdk.Deck(
                 layers=[layer], initial_view_state=view_state,
                 tooltip={"text": "📍 {Destination}\n📦 Resi: {Total Resi}\n💰 Rev: Rp {Revenue}"},
-                map_style='dark'
+                map_style='dark' # Ini kunci biar petanya nongol bro!
             )
             st.pydeck_chart(r)
         else:
-            st.info("💡 Peta logistik menyembunyikan beberapa titik karena nama kota belum ada di kamus koordinat.")
+            st.info("💡 Peta logistik belum bisa ditampilkan. Pastikan nama kota sudah ada di kamus sistem.")
             
         st.markdown("---")
         
