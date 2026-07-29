@@ -82,7 +82,9 @@ def load_unified_data(file_paths):
             # 1. LOAD RAW DATA
             if "Raw Data" in xls.sheet_names:
                 df = pd.read_excel(xls, "Raw Data")
-                df_std = pd.DataFrame()
+                
+                # BUG FIXED DISINI: Kunci indexnya dulu biar baris data nggak jadi NaN!
+                df_std = pd.DataFrame(index=df.index) 
                 
                 df_std['KPI'] = kpi_type
                 
@@ -146,7 +148,7 @@ if len(list_file_excel) == 0:
 df_master, df_rata2_master = load_unified_data(tuple(list_file_excel))
 
 if df_master.empty:
-    st.error("Gagal membaca data dari file Excel.")
+    st.error("Gagal membaca data dari file Excel. Pastikan sheet 'Raw Data' ada di dalam file.")
     st.stop()
 
 df_master = df_master.dropna(subset=['Date', 'SCO'])
