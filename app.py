@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
-import io
+import glob
+import os
 
 # ==========================================
 # 1. SETTING HALAMAN & INJEKSI CSS PREMIUM
@@ -11,7 +12,6 @@ st.set_page_config(page_title="Dashboard SCO", page_icon="📦", layout="wide")
 def add_custom_css():
     st.markdown("""
     <style>
-    /* Ubah background jadi Midnight Blue/Dark Slate biar lebih elegan dan manjain mata */
     [data-testid="stAppViewContainer"] {
         background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
         color: #ffffff;
@@ -57,7 +57,6 @@ def add_custom_css():
     }
     h1, h2, h3, p, .stMarkdown { color: #ffffff !important; }
     
-    /* Box Insight Otomatis */
     .insight-box {
         background: linear-gradient(90deg, rgba(100, 255, 218, 0.15) 0%, rgba(100, 255, 218, 0.0) 100%);
         border-left: 5px solid #64ffda;
@@ -76,33 +75,55 @@ add_custom_css()
 # ==========================================
 # FUNGSI KELOLA DATA & STANDARISASI
 # ==========================================
+def clean_destination(dest, kpi_type):
+    if pd.isna(dest) or str(dest).strip() == "-" or str(dest).strip() == "":
+        return "-"
+    dest_str = str(dest).strip().upper()
+    
+    if kpi_type == "Cashless":
+        # Mapping kode Cashless (ex: BOO10028 -> BOGOR)
+        code = dest_str[:3]
+        mapping = {
+            'CGK': 'JAKARTA', 'BKI': 'BEKASI', 'BOO': 'BOGOR', 'DPK': 'DEPOK', 'TGR': 'TANGERANG',
+            'BDO': 'BANDUNG', 'SMI': 'SUKABUMI', 'SOC': 'SOLO', 'SRG': 'SEMARANG', 'JOG': 'YOGYAKARTA',
+            'SUB': 'SURABAYA', 'MLG': 'MALANG', 'DPS': 'BALI', 'KNO': 'MEDAN', 'MES': 'MEDAN',
+            'PDG': 'PADANG', 'PKU': 'PEKANBARU', 'PLM': 'PALEMBANG', 'BPN': 'BALIKPAPAN',
+            'BJM': 'BANJARMASIN', 'PNK': 'PONTIANAK', 'UPG': 'MAKASSAR', 'MDC': 'MANADO',
+            'BTJ': 'BANDA ACEH', 'MGL': 'MAGELANG', 'TKG': 'BANDAR LAMPUNG', 'CBN': 'CIREBON',
+            'KDI': 'KENDARI', 'AMQ': 'AMBON', 'DJJ': 'JAYAPURA', 'TRK': 'TARAKAN'
+        }
+        return mapping.get(code, code)
+    else:
+        # Data Cash biasa di split koma (ex: TAMBUN SELATAN,CIKAR -> TAMBUN SELATAN)
+        return dest_str.split(',')[0].strip()
+
 @st.cache_data
-def load_unified_data(uploaded_files):
+def load_unified_data(file_list):
     all_raw = []
     all_rata2 = []
     
-    for f in uploaded_files:
+    for f in file_list:
         try:
-            filename = f.name.lower()
+            # Handle sifat file (Uploaded vs Local path)
+            if hasattr(f, 'name'):
+                filename = f.name.lower()
+                xls_input = f
+            else:
+                filename = os.path.basename(f).lower()
+                xls_input = f
             
-            # Deteksi KPI (Logika dipertegas biar gak bentrok Cash vs Cashless)
-            if "cashless" in filename: 
-                kpi_type = "Cashless"
-            elif "kredit auto" in filename: 
-                kpi_type = "Kredit Auto"
-            elif "kredit manual" in filename: 
-                kpi_type = "Kredit Manual"
-            elif "cash" in filename: 
-                kpi_type = "Cash"
-            else: 
-                kpi_type = "Cash"
+            # Deteksi KPI 
+            if "cashless" in filename: kpi_type = "Cashless"
+            elif "kredit auto" in filename: kpi_type = "Kredit Auto"
+            elif "kredit manual" in filename: kpi_type = "Kredit Manual"
+            elif "cash" in filename: kpi_type = "Cash"
+            else: kpi_type = "Cash"
                 
-            xls = pd.ExcelFile(f)
+            xls = pd.ExcelFile(xls_input)
             
             if "Raw Data" in xls.sheet_names:
                 df = pd.read_excel(xls, "Raw Data")
                 df_std = pd.DataFrame(index=df.index) 
-                
                 df_std['KPI'] = kpi_type
                 
                 col_sco = 'User id' if 'User id' in df.columns else ('User Id' if 'User Id' in df.columns else None)
@@ -121,8 +142,8 @@ def load_unified_data(uploaded_files):
                 
                 df_std['Customer'] = df['Shipper Name'].fillna("-") if 'Shipper Name' in df.columns else "-"
                 
-                # Fitur Baru: Destinasi
-                df_std['Destination'] = df['Destination'].fillna("-") if 'Destination' in df.columns else "-"
+                # Fitur Baru: Clean Destinasi
+                df_std['Destination'] = df['Destination'].apply(lambda x: clean_destination(x, kpi_type)) if 'Destination' in df.columns else "-"
                 
                 if kpi_type == "Cashless":
                     col_pay = 'Marketplace_Clean' if 'Marketplace_Clean' in df.columns else ('Marketplace' if 'Marketplace' in df.columns else None)
@@ -151,22 +172,30 @@ def format_rupiah(val):
     return f"Rp {val:,.0f}".replace(",", ".")
 
 # ==========================================
-# SIDEBAR KIRI: UPLOAD & FILTER
+# SIDEBAR KIRI: SISTEM HYBRID & FILTER
 # ==========================================
 st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3063/3063822.png", width=100)
-st.sidebar.header("📁 Upload File Data")
+st.sidebar.header("📁 Data Source (Hybrid)")
+st.sidebar.markdown("<p style='font-size:0.9rem; color:#a8b2d1;'>Sistem akan otomatis baca dari server/GitHub. Upload file hanya jika ingin menimpa data sementara.</p>", unsafe_allow_html=True)
 
-# Fitur Baru: File Uploader langsung di web
-uploaded_files = st.sidebar.file_uploader("Upload File Excel (.xlsx)", type=['xlsx'], accept_multiple_files=True)
+uploaded_files = st.sidebar.file_uploader("Upload File Bypass (.xlsx)", type=['xlsx'], accept_multiple_files=True)
 
-if not uploaded_files:
-    st.info("👈 Belum ada file Excel yang di-upload bro. Silakan drag & drop filenya di sidebar untuk memulai!")
+# LOGIKA HYBRID
+if uploaded_files:
+    active_files = uploaded_files
+else:
+    list_local = glob.glob("*.xlsx")
+    list_local = [f for f in list_local if not f.startswith("~$")]
+    active_files = list_local
+
+if not active_files:
+    st.error("⚠️ Data server kosong dan belum ada file yang di-upload.")
     st.stop()
 
 # 1. LOAD GLOBAL MASTER 
-df_global, _ = load_unified_data(uploaded_files)
+df_global, _ = load_unified_data(active_files)
 if df_global.empty:
-    st.error("Gagal membaca data dari file Excel. Pastikan sheet 'Raw Data' ada di dalam file.")
+    st.error("Gagal membaca data. Pastikan sheet 'Raw Data' ada di dalam file.")
     st.stop()
 
 st.sidebar.markdown("---")
@@ -176,10 +205,10 @@ st.sidebar.header("🔍 Filter Analytics")
 available_kpis = df_global['KPI'].unique().tolist()
 selected_kpi = st.sidebar.selectbox("📊 Pilih Pilar KPI:", options=available_kpis)
 
-# 3. FIX BUG: Logika Pemilihan File yang Ketat (Cash vs Cashless)
+# 3. FIX BUG: Pemilihan File Ketat
 list_file_kpi = []
-for f in uploaded_files:
-    fname = f.name.lower()
+for f in active_files:
+    fname = f.name.lower() if hasattr(f, 'name') else os.path.basename(f).lower()
     if selected_kpi == "Cash" and "cashless" not in fname and "kredit" not in fname:
         list_file_kpi.append(f)
     elif selected_kpi == "Cashless" and "cashless" in fname:
@@ -187,22 +216,23 @@ for f in uploaded_files:
     elif selected_kpi not in ["Cash", "Cashless"] and selected_kpi.lower() in fname:
         list_file_kpi.append(f)
 
+list_file_kpi_names = [f.name if hasattr(f, 'name') else os.path.basename(f) for f in list_file_kpi]
+
 if not list_file_kpi:
-    st.sidebar.warning(f"File untuk KPI {selected_kpi} tidak ditemukan dalam daftar upload.")
+    st.sidebar.warning(f"File untuk KPI {selected_kpi} tidak ditemukan.")
     st.stop()
 
 selected_file_names = st.sidebar.multiselect(
     f"📂 Pilih File {selected_kpi}:", 
-    options=[f.name for f in list_file_kpi],
-    default=[f.name for f in list_file_kpi]
+    options=list_file_kpi_names,
+    default=list_file_kpi_names
 )
 
 if not selected_file_names:
     st.sidebar.warning(f"Pilih minimal 1 file data {selected_kpi} dulu bro!")
     st.stop()
 
-# Ambil object file yang sesuai nama pilihan
-selected_files = [f for f in list_file_kpi if f.name in selected_file_names]
+selected_files = [f for f in list_file_kpi if (f.name if hasattr(f, 'name') else os.path.basename(f)) in selected_file_names]
 
 # 4. LOAD ACTIVE MASTER 
 df_active, df_rata2_active = load_unified_data(selected_files)
@@ -219,14 +249,13 @@ if df_kpi_only.empty:
 # 5. RENTANG TANGGAL
 min_date = df_kpi_only['Date_Only'].min()
 max_date = df_kpi_only['Date_Only'].max()
-
 date_range = st.sidebar.date_input("📅 Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_value=max_date)
 if len(date_range) == 2:
     start_date, end_date = date_range
 else:
     start_date = end_date = date_range[0]
     
-# 6. NAMA SCO (Ganti istilah Kasir jadi SCO)
+# 6. NAMA SCO 
 list_sco = df_kpi_only['SCO'].dropna().unique().tolist()
 selected_sco = st.sidebar.multiselect("👨‍💼 Pilih SCO (Bisa >1):", options=list_sco, default=[], help="Kosongkan buat nampilin semua")
 
@@ -238,7 +267,7 @@ df_filtered = df_kpi_only[mask_date].copy()
 if selected_sco:
     df_filtered = df_filtered[df_filtered['SCO'].isin(selected_sco)]
 
-# FITUR BARU: DOWNLOAD DATA BUTTON
+# DOWNLOAD DATA
 st.sidebar.markdown("---")
 st.sidebar.header("📥 Export Data")
 csv_data = df_filtered.to_csv(index=False).encode('utf-8')
@@ -256,7 +285,6 @@ if df_filtered.empty:
     st.warning("⚠️ Data kosong pada rentang waktu atau SCO yang dipilih.")
     st.stop()
 
-# Penambahan Tab Destinasi (Tab 6 baru), Executive jadi Tab 8
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📈 Dashboard Utama", 
     "🏆 Top Customer", 
@@ -285,7 +313,6 @@ with tab1:
     srv_top = df_filtered['Service'].mode()[0] if not df_filtered['Service'].empty else "-"
     pay_top = df_filtered['Payment_Method'].mode()[0] if not df_filtered['Payment_Method'].empty else "-"
     
-    # Automated Insight (FITUR BARU)
     st.markdown(f"""
     <div class="insight-box">
         <b>💡 Automated Insight:</b> Berdasarkan periode yang dipilih, <b>{best_user}</b> memimpin kontribusi SCO dengan revenue <b>{format_rupiah(best_user_rev)}</b>. 
@@ -294,7 +321,6 @@ with tab1:
     """, unsafe_allow_html=True)
 
     c1, c2, c3, c4 = st.columns(4)
-    # Fitur Baru: Indikator/Delta warna hijau pada Metric Box
     c1.metric("📦 TOTAL TRANSAKSI", f"{total_resi} Resi")
     c2.metric("💰 TOTAL REVENUE", format_rupiah(total_rev), delta="Target On Track")
     c3.metric("📈 RATA-RATA / TRANSAKSI", format_rupiah(rata_transaksi))
@@ -325,6 +351,32 @@ with tab1:
             color=alt.Color('SCO:N', scale=alt.Scale(scheme='teals'), legend=None), tooltip=['SCO', 'Pendapatan']
         ).properties(height=300)
         st.altair_chart(chart_sco, use_container_width=True)
+        
+    # FITUR BARU: Tambahan diagram di Tab Utama
+    st.markdown("---")
+    bawah1, bawah2 = st.columns(2)
+    with bawah1:
+        st.subheader(f"💵 Rata-Rata Revenue per Resi (Harian)")
+        rata_harian = df_filtered.groupby('Date_Only', as_index=False).agg(Total_Rev=('Revenue', 'sum'), Total_Resi=('Revenue', 'count'))
+        rata_harian['Rata-Rata'] = rata_harian['Total_Rev'] / rata_harian['Total_Resi']
+        chart_avg = alt.Chart(rata_harian).mark_area(
+            opacity=0.3,
+            color=alt.Gradient(gradient='linear', stops=[alt.GradientStop(color='#64ffda', offset=0), alt.GradientStop(color='rgba(0,0,0,0)', offset=1)], x1=1, x2=1, y1=1, y2=0)
+        ).encode(
+            x=alt.X('Date_Only:T', title='Tanggal'), y=alt.Y('Rata-Rata:Q', title='Rata-Rata Revenue (Rp)'), tooltip=['Date_Only', 'Rata-Rata']
+        )
+        line_avg = alt.Chart(rata_harian).mark_line(color='#64ffda', strokeWidth=3).encode(x='Date_Only:T', y='Rata-Rata:Q')
+        st.altair_chart((chart_avg + line_avg).properties(height=300), use_container_width=True)
+
+    with bawah2:
+        st.subheader("📦 Top 5 Destinasi Pengiriman")
+        dest_df_quick = df_filtered[df_filtered['Destination'] != '-'].groupby('Destination', as_index=False).size().rename(columns={'size':'Total Resi'}).sort_values('Total Resi', ascending=False).head(5)
+        chart_dest_quick = alt.Chart(dest_df_quick).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5, color='#00b4d8').encode(
+            x=alt.X('Total Resi:Q', title='Jumlah Transaksi'),
+            y=alt.Y('Destination:N', sort='-x', title='Daerah Tujuan'),
+            tooltip=['Destination', 'Total Resi']
+        ).properties(height=300)
+        st.altair_chart(chart_dest_quick, use_container_width=True)
 
 # ==========================================
 # TAB 2: TOP CUSTOMER
@@ -332,7 +384,6 @@ with tab1:
 with tab2:
     st.header(f"🏆 Analisis Top Customer ({selected_kpi})")
     df_cust = df_filtered[df_filtered['Customer'] != '-']
-    
     if df_cust.empty:
         st.info("Tidak ada data Customer (Shipper Name) di rentang waktu/SCO ini.")
     else:
@@ -341,10 +392,8 @@ with tab2:
             st.subheader("🥇 Top 10 Customer (By Revenue)")
             top_rev = df_cust.groupby('Customer', as_index=False).agg({'Revenue':'sum', 'SCO':'count'}).rename(columns={'Revenue':'Total Belanja', 'SCO':'Total Resi'}).sort_values(by='Total Belanja', ascending=False).head(10)
             chart_rev = alt.Chart(top_rev).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5).encode(
-                x=alt.X('Total Belanja:Q', title='Total Revenue (Rp)'),
-                y=alt.Y('Customer:N', sort='-x', title='Customer'),
-                color=alt.Color('Total Belanja:Q', scale=alt.Scale(scheme='blues'), legend=None),
-                tooltip=['Customer', 'Total Belanja', 'Total Resi']
+                x=alt.X('Total Belanja:Q', title='Total Revenue (Rp)'), y=alt.Y('Customer:N', sort='-x', title='Customer'),
+                color=alt.Color('Total Belanja:Q', scale=alt.Scale(scheme='blues'), legend=None), tooltip=['Customer', 'Total Belanja', 'Total Resi']
             ).properties(height=400)
             st.altair_chart(chart_rev, use_container_width=True)
             
@@ -357,10 +406,8 @@ with tab2:
             st.subheader("🔢 Top 10 Customer (By Connote)")
             top_con = df_cust.groupby('Customer', as_index=False).agg({'SCO':'count', 'Revenue':'sum'}).rename(columns={'SCO':'Total Resi', 'Revenue':'Total Belanja'}).sort_values(by='Total Resi', ascending=False).head(10)
             chart_con = alt.Chart(top_con).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5).encode(
-                x=alt.X('Total Resi:Q', title='Total Transaksi (Resi)'),
-                y=alt.Y('Customer:N', sort='-x', title='Customer'),
-                color=alt.Color('Total Resi:Q', scale=alt.Scale(scheme='oranges'), legend=None),
-                tooltip=['Customer', 'Total Resi', 'Total Belanja']
+                x=alt.X('Total Resi:Q', title='Total Transaksi (Resi)'), y=alt.Y('Customer:N', sort='-x', title='Customer'),
+                color=alt.Color('Total Resi:Q', scale=alt.Scale(scheme='oranges'), legend=None), tooltip=['Customer', 'Total Resi', 'Total Belanja']
             ).properties(height=400)
             st.altair_chart(chart_con, use_container_width=True)
             
@@ -381,28 +428,18 @@ with tab3:
             df_r_clean = df_rata2_active.copy()
             if selected_sco:
                 df_r_clean = df_r_clean[df_r_clean['User id'].isin(selected_sco)]
-            
             for col in ['Total_Connote', 'Revenue', 'Hari_Masuk']:
-                if col in df_r_clean.columns:
-                    df_r_clean[col] = pd.to_numeric(df_r_clean[col], errors='coerce').fillna(0)
-                    
+                if col in df_r_clean.columns: df_r_clean[col] = pd.to_numeric(df_r_clean[col], errors='coerce').fillna(0)
             agg_rules = {}
             if 'Total_Connote' in df_r_clean.columns: agg_rules['Total_Connote'] = 'sum'
             if 'Revenue' in df_r_clean.columns: agg_rules['Revenue'] = 'sum'
             if 'Hari_Masuk' in df_r_clean.columns: agg_rules['Hari_Masuk'] = 'sum'
-            
-            if agg_rules:
-                df_r_clean = df_r_clean.groupby('User id', as_index=False).agg(agg_rules)
-                
+            if agg_rules: df_r_clean = df_r_clean.groupby('User id', as_index=False).agg(agg_rules)
             if 'Hari_Masuk' in df_r_clean.columns:
-                if 'Total_Connote' in df_r_clean.columns:
-                    df_r_clean['Rata_Transaksi_Per_Hari'] = (df_r_clean['Total_Connote'] / df_r_clean['Hari_Masuk']).fillna(0).round(1)
-                if 'Revenue' in df_r_clean.columns:
-                    df_r_clean['Rata_Pendapatan_Per_Hari'] = (df_r_clean['Revenue'] / df_r_clean['Hari_Masuk']).fillna(0)
-                    
-            if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns:
-                df_r_clean['Rata_Pendapatan_Per_Hari_Num'] = df_r_clean['Rata_Pendapatan_Per_Hari']
-                
+                if 'Total_Connote' in df_r_clean.columns: df_r_clean['Rata_Transaksi_Per_Hari'] = (df_r_clean['Total_Connote'] / df_r_clean['Hari_Masuk']).fillna(0).round(1)
+                if 'Revenue' in df_r_clean.columns: df_r_clean['Rata_Pendapatan_Per_Hari'] = (df_r_clean['Revenue'] / df_r_clean['Hari_Masuk']).fillna(0)
+            if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns: df_r_clean['Rata_Pendapatan_Per_Hari_Num'] = df_r_clean['Rata_Pendapatan_Per_Hari']
+            
             if 'Revenue' in df_r_clean.columns: df_r_clean['Revenue'] = df_r_clean['Revenue'].apply(format_rupiah)
             if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns: df_r_clean['Rata_Pendapatan_Per_Hari'] = df_r_clean['Rata_Pendapatan_Per_Hari'].apply(format_rupiah)
             if 'Total_Connote' in df_r_clean.columns: df_r_clean['Total_Connote'] = df_r_clean['Total_Connote'].astype(int)
@@ -415,33 +452,23 @@ with tab3:
                     color=alt.Color('User id:N', scale=alt.Scale(scheme='set2'), legend=None), tooltip=['User id', 'Hari_Masuk', 'Rata_Pendapatan_Per_Hari']
                 ).properties(height=350)
                 st.altair_chart(chart_abs, use_container_width=True)
-                
             st.subheader("📋 Tabel Detail Kinerja (CASH)")
             cols = [c for c in df_r_clean.columns if not c.endswith('_Num')]
             st.dataframe(df_r_clean[cols], use_container_width=True)
-            
     else:
         st.header(f"👨‍💼 Rekapitulasi Kinerja SCO ({selected_kpi})")
-        st.markdown("<p style='color:#a8b2d1 !important;'>Catatan: Rata-rata hari masuk tidak dihitung pada KPI ini.</p>", unsafe_allow_html=True)
-        
-        rekap_sco = df_filtered.groupby('SCO', as_index=False).agg(
-            Total_Resi=('Revenue', 'count'), Total_Revenue=('Revenue', 'sum')
-        ).sort_values('Total_Revenue', ascending=False)
-        
+        rekap_sco = df_filtered.groupby('SCO', as_index=False).agg(Total_Resi=('Revenue', 'count'), Total_Revenue=('Revenue', 'sum')).sort_values('Total_Revenue', ascending=False)
         rekap_sco['Total_Revenue_Num'] = rekap_sco['Total_Revenue']
-        
         st.subheader("📊 Total Pendapatan Tiap SCO")
         chart_noncash = alt.Chart(rekap_sco).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
             x=alt.X('SCO:N', title='Nama SCO', sort='-y'), y=alt.Y('Total_Revenue_Num:Q', title='Total Revenue (Rp)'),
             color=alt.Color('SCO:N', scale=alt.Scale(scheme='set2'), legend=None), tooltip=['SCO', 'Total_Resi', 'Total_Revenue_Num']
         ).properties(height=350)
         st.altair_chart(chart_noncash, use_container_width=True)
-        
         tabel_sco = rekap_sco.copy()
         tabel_sco['Total_Revenue'] = tabel_sco['Total_Revenue'].apply(format_rupiah)
         tabel_sco = tabel_sco.drop(columns=['Total_Revenue_Num'])
         tabel_sco.index = range(1, len(tabel_sco) + 1)
-        
         st.subheader(f"📋 Tabel Detail Kinerja ({selected_kpi})")
         st.dataframe(tabel_sco, use_container_width=True)
 
@@ -462,7 +489,6 @@ with tab4:
             tooltip=['Hari', 'Total Transaksi']
         ).properties(height=350)
         st.altair_chart(chart_pola, use_container_width=True)
-        
     with a2:
         df_filtered['Jam'] = df_filtered['Date'].dt.hour
         jam_df = df_filtered.groupby('Jam', as_index=False).size().rename(columns={'size':'Total Transaksi'})
@@ -488,7 +514,6 @@ with tab5:
             tooltip=['Jenis Layanan', 'Total Dipakai']
         ).properties(height=300)
         st.altair_chart(chart_serv, use_container_width=True)
-        
     with s2:
         top_pay = df_filtered['Payment_Method'].value_counts().reset_index().rename(columns={'Payment_Method':'Metode', 'count':'Total Transaksi'})
         chart_pay = alt.Chart(top_pay).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5).encode(
@@ -498,7 +523,7 @@ with tab5:
         st.altair_chart(chart_pay, use_container_width=True)
 
 # ==========================================
-# TAB 6: PEMETAAN DESTINASI (FITUR BARU)
+# TAB 6: PEMETAAN DESTINASI
 # ==========================================
 with tab6:
     st.header(f"📍 Analisis Wilayah Destinasi ({selected_kpi})")
@@ -515,7 +540,8 @@ with tab6:
             ).properties(height=400)
             st.altair_chart(chart_dest, use_container_width=True)
         with d2:
-            st.subheader("Top 15 Destinasi")
+            st.subheader("Top 15 Destinasi (Table)")
+            dest_df.index = range(1, len(dest_df) + 1) # FITUR BARU: Bikin index jadi rapi (1-15)
             st.dataframe(dest_df[['Destination', 'Total Resi']], use_container_width=True)
     else:
         st.info("Data destinasi tidak tersedia di file ini.")
@@ -549,9 +575,17 @@ with tab7:
             line_trx = base_trx.mark_line(color='#ffea00', strokeWidth=4, interpolate='monotone').encode(y='Total Transaksi:Q')
             points_trx = base_trx.mark_circle(color='#ffffff', size=120, opacity=1).encode(y='Total Transaksi:Q', tooltip=['Periode', 'Total Transaksi'])
             st.altair_chart((area_trx + line_trx + points_trx).properties(height=350), use_container_width=True)
+            
+        # FITUR BARU: Master Table di Tab 7
+        st.markdown("---")
+        st.subheader("📋 Master Table Tren Bulanan")
+        tabel_tren = tren_bulan.copy()
+        tabel_tren['Total Revenue'] = tabel_tren['Total Revenue'].apply(format_rupiah)
+        tabel_tren.index = range(1, len(tabel_tren) + 1)
+        st.dataframe(tabel_tren[['Periode', 'Total Transaksi', 'Total Revenue']], use_container_width=True)
 
 # ==========================================
-# TAB 8: EXECUTIVE SUMMARY (ROMBAK TOTAL)
+# TAB 8: EXECUTIVE SUMMARY 
 # ==========================================
 with tab8:
     st.header("🌐 Executive Summary (Master Global)")
@@ -584,12 +618,23 @@ with tab8:
 
     with e2:
         st.subheader("📋 Master Table")
+        
+        # FITUR BARU: Nambahin Total Resi di Master Table Tab 8
+        pivot_resi = df_global.pivot_table(index='SCO', columns='KPI', values='Revenue', aggfunc='count', fill_value=0)
+        pivot_resi['Total Resi Akhir'] = pivot_resi.sum(axis=1)
+        
         pivot_rev = df_global.pivot_table(index='SCO', columns='KPI', values='Revenue', aggfunc='sum', fill_value=0)
         pivot_rev['Total Pendapatan Akhir'] = pivot_rev.sum(axis=1)
-        pivot_rev = pivot_rev.sort_values('Total Pendapatan Akhir', ascending=False)
         
-        # Formatting buat tampilan
-        for c in pivot_rev.columns:
-            pivot_rev[c] = pivot_rev[c].apply(format_rupiah)
+        pivot_resi.columns = [f"📦 Resi {c}" if c != 'Total Resi Akhir' else c for c in pivot_resi.columns]
+        pivot_rev.columns = [f"💰 Rev {c}" if c != 'Total Pendapatan Akhir' else c for c in pivot_rev.columns]
+        
+        global_rekap = pd.concat([pivot_resi, pivot_rev], axis=1).reset_index()
+        global_rekap = global_rekap.sort_values('Total Pendapatan Akhir', ascending=False)
+        
+        rev_cols = [c for c in global_rekap.columns if "Rev" in c or "Pendapatan" in c]
+        for c in rev_cols:
+            global_rekap[c] = global_rekap[c].apply(format_rupiah)
             
-        st.dataframe(pivot_rev, use_container_width=True)
+        global_rekap.index = range(1, len(global_rekap) + 1)
+        st.dataframe(global_rekap, use_container_width=True)
