@@ -11,18 +11,18 @@ st.set_page_config(page_title="Dashboard SCO", page_icon="📦", layout="wide")
 def add_custom_css():
     st.markdown("""
     <style>
-    /* 1. Background Utama (Gradient Premium: Midnight Blue) */
+    /* Background Utama (Gradient Premium: Midnight Blue) */
     [data-testid="stAppViewContainer"] {
         background: linear-gradient(135deg, #141e30 0%, #243b55 100%);
         color: #ffffff;
     }
     
-    /* 2. Transparansi Header Bawaan Streamlit */
+    /* Transparansi Header Bawaan Streamlit */
     [data-testid="stHeader"] {
         background: rgba(0,0,0,0);
     }
     
-    /* 3. Sidebar dengan Efek Kaca (Glassmorphism) */
+    /* Sidebar dengan Efek Kaca (Glassmorphism) */
     [data-testid="stSidebar"] {
         background: rgba(20, 30, 48, 0.6) !important;
         backdrop-filter: blur(15px);
@@ -30,7 +30,7 @@ def add_custom_css():
         border-right: 1px solid rgba(255, 255, 255, 0.1);
     }
     
-    /* 4. Kotak Angka (Metrics) - Efek Kartu Kaca */
+    /* Kotak Angka (Metrics) - Efek Kartu Kaca */
     [data-testid="stMetric"] {
         background: rgba(255, 255, 255, 0.05);
         backdrop-filter: blur(10px);
@@ -42,14 +42,12 @@ def add_custom_css():
         transition: transform 0.3s ease, box-shadow 0.3s ease;
     }
     
-    /* Efek hover saat kursor diarahkan ke kotak angka */
     [data-testid="stMetric"]:hover {
         transform: translateY(-5px);
         box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.5);
         border: 1px solid rgba(255, 255, 255, 0.2);
     }
     
-    /* Warna teks pada Metrics */
     [data-testid="stMetricLabel"] {
         color: #a8b2d1 !important;
         font-weight: 600;
@@ -60,7 +58,7 @@ def add_custom_css():
         font-weight: 800;
     }
     
-    /* 5. Styling TABS biar bentuknya kayak tombol modern */
+    /* Styling TABS */
     .stTabs [data-baseweb="tab-list"] {
         gap: 10px;
         background-color: rgba(255, 255, 255, 0.05);
@@ -82,23 +80,19 @@ def add_custom_css():
         box-shadow: 0 0 15px rgba(100, 255, 218, 0.1);
     }
     
-    /* Global Text Color Fixes */
     h1, h2, h3, p, .stMarkdown {
         color: #ffffff !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# Panggil fungsi CSS-nya di sini
 add_custom_css()
 
-
 # ==========================================
-# SIDEBAR KIRI: MESIN WAKTU (PILIH BULAN)
+# SIDEBAR KIRI: MESIN WAKTU & FILTER
 # ==========================================
 st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3063/3063822.png", width=100)
 st.sidebar.header("📅 Pengaturan Waktu")
-st.sidebar.markdown("Pilih periode data yang mau ditampilkan.")
 
 list_file_excel = glob.glob("*.xlsx")
 list_file_excel = [f for f in list_file_excel if not f.startswith("~$")]
@@ -108,16 +102,7 @@ if len(list_file_excel) == 0:
     st.stop()
 
 selected_file = st.sidebar.selectbox("📂 Pilih File Periode:", list_file_excel)
-st.sidebar.markdown("---")
-st.sidebar.success(f"Sedang menampilkan detail dari:\n**{selected_file}**")
-
-# ==========================================
-# HEADER UTAMA
-# ==========================================
-st.title("📊 Dashboard Performa Pengiriman KP Grand Taruma")
-st.markdown("<p style='color:#a8b2d1 !important; font-size:1.2rem;'>(By Yusuf Zulkarnaen)</p>", unsafe_allow_html=True)
-st.markdown("<p style='color:#e2e8f0 !important;'>Rekapitulasi lengkap data operasional, performa tim, dan insight pelanggan.</p>", unsafe_allow_html=True)
-st.markdown("---")
+st.sidebar.success(f"File aktif:\n**{selected_file}**")
 
 @st.cache_data
 def load_data(file_path):
@@ -144,9 +129,72 @@ def format_rupiah(val):
     return f"Rp {val:,.0f}".replace(",", ".")
 
 try:
-    df, df_rata2 = load_data(selected_file)
+    # Load data mentah
+    df_raw, df_rata2_raw = load_data(selected_file)
     df_all = load_all_data(list_file_excel)
     
+    df = df_raw.copy()
+    df_rata2 = df_rata2_raw.copy()
+
+    # Parsing tanggal buat filter
+    df['Date_Parsed'] = pd.to_datetime(df['Date'])
+    min_date = df['Date_Parsed'].min().date()
+    max_date = df['Date_Parsed'].max().date()
+
+    st.sidebar.markdown("---")
+    st.sidebar.header("🔍 Filter Data (Drill-Down)")
+    
+    # 1. Widget Kalender (Rentang Tanggal)
+    date_range = st.sidebar.date_input(
+        "📅 Rentang Tanggal", 
+        value=(min_date, max_date), 
+        min_value=min_date, 
+        max_value=max_date
+    )
+    
+    # Handle kondisi kalau user milih 1 hari atau 2 hari
+    if len(date_range) == 2:
+        start_date, end_date = date_range
+    else:
+        start_date = end_date = date_range[0]
+        
+    # 2. Widget Pilihan SCO
+    list_sco = df['User id'].dropna().unique().tolist()
+    selected_sco = st.sidebar.multiselect(
+        "👨‍💼 Pilih SCO (Bisa >1):", 
+        options=list_sco, 
+        default=[], 
+        help="Kosongkan buat nampilin semua SCO"
+    )
+
+    # ==========================================
+    # LOGIKA FILTERING DATA
+    # ==========================================
+    # Eksekusi filter tanggal
+    mask_date = (df['Date_Parsed'].dt.date >= start_date) & (df['Date_Parsed'].dt.date <= end_date)
+    df_filtered = df[mask_date].copy()
+    
+    # Eksekusi filter nama SCO (Kalau ada yang dipilih)
+    if selected_sco:
+        df_filtered = df_filtered[df_filtered['User id'].isin(selected_sco)]
+        df_rata2 = df_rata2[df_rata2['User id'].isin(selected_sco)]
+        
+    st.sidebar.markdown("---")
+
+    # ==========================================
+    # HEADER UTAMA
+    # ==========================================
+    st.title("📊 Dashboard Performa Pengiriman KP Grand Taruma")
+    st.markdown("<p style='color:#a8b2d1 !important; font-size:1.2rem;'>(By Yusuf Zulkarnaen)</p>", unsafe_allow_html=True)
+    st.markdown("<p style='color:#e2e8f0 !important;'>Rekapitulasi lengkap data operasional, performa tim, dan insight pelanggan.</p>", unsafe_allow_html=True)
+    st.markdown("---")
+
+    # Kalau hasil filternya kosong, stop eksekusi tab
+    if df_filtered.empty:
+        st.warning("⚠️ Waduh, datanya kosong bro untuk filter yang lu pilih. Coba ganti rentang tanggal atau nama SCO-nya.")
+        st.stop()
+
+    # Render Tabs
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📈 Dashboard Utama", 
         "🏆 Top Customer", 
@@ -162,18 +210,23 @@ try:
     with tab1:
         st.header("Ringkasan Performa")
         
-        total_resi = len(df)
-        total_rev = df['Amount'].sum()
-        total_berat = df['Weight'].sum()
+        total_resi = len(df_filtered)
+        total_rev = df_filtered['Amount'].sum()
+        total_berat = df_filtered['Weight'].sum()
         rata_transaksi = total_rev / total_resi if total_resi > 0 else 0
         
-        rekap_user = df.groupby('User id')['Amount'].sum().sort_values(ascending=False)
+        rekap_user = df_filtered.groupby('User id')['Amount'].sum().sort_values(ascending=False)
         best_user = rekap_user.index[0] if not rekap_user.empty else "-"
         best_user_rev = rekap_user.iloc[0] if not rekap_user.empty else 0
         
-        sco_aktif = df['User id'].nunique()
-        layanan_top = df['Services'].mode()[0] if not df['Services'].empty else "-"
-        pay_top = df['Payment type'].mode()[0] if not df['Payment type'].empty else "-"
+        sco_aktif = df_filtered['User id'].nunique()
+        
+        # Cari layanan & payment top dengan aman
+        layanan_modes = df_filtered['Services'].mode()
+        layanan_top = layanan_modes[0] if not layanan_modes.empty else "-"
+        
+        pay_modes = df_filtered['Payment type'].mode()
+        pay_top = pay_modes[0] if not pay_modes.empty else "-"
         
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("📦 TOTAL TRANSAKSI", f"{total_resi} Resi")
@@ -193,20 +246,20 @@ try:
         
         kiri, kanan = st.columns(2)
         with kiri:
-            st.subheader("📈 Tren Transaksi Harian (Bulan Ini)")
-            df['Tanggal'] = pd.to_datetime(df['Date']).dt.date
-            harian = df.groupby('Tanggal', as_index=False).size().rename(columns={'size':'Transaksi'})
+            st.subheader("📈 Tren Transaksi Harian")
+            df_filtered['Tanggal_Only'] = df_filtered['Date_Parsed'].dt.date
+            harian = df_filtered.groupby('Tanggal_Only', as_index=False).size().rename(columns={'size':'Transaksi'})
             
             chart_tren = alt.Chart(harian).mark_line(point=True, color='#64ffda', strokeWidth=3).encode(
-                x=alt.X('Tanggal:T', title='Tanggal'),
+                x=alt.X('Tanggal_Only:T', title='Tanggal'),
                 y=alt.Y('Transaksi:Q', title='Jumlah Resi'),
-                tooltip=['Tanggal', 'Transaksi']
+                tooltip=['Tanggal_Only', 'Transaksi']
             ).properties(height=300)
             st.altair_chart(chart_tren, use_container_width=True)
             
         with kanan:
             st.subheader("🏅 Ranking Performa SCO")
-            rekap_user_df = df.groupby('User id', as_index=False).agg({'Amount':'sum'}).rename(columns={'Amount':'Pendapatan'}).sort_values(by='Pendapatan', ascending=False)
+            rekap_user_df = df_filtered.groupby('User id', as_index=False).agg({'Amount':'sum'}).rename(columns={'Amount':'Pendapatan'}).sort_values(by='Pendapatan', ascending=False)
             
             chart_sco = alt.Chart(rekap_user_df).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
                 x=alt.X('User id:N', sort='-y', title='Nama SCO'),
@@ -221,43 +274,45 @@ try:
     # ==========================================
     with tab2:
         st.header("🏆 Analisis Top Customer")
-        df_cust = df[df['Shipper Name'] != '-']
+        df_cust = df_filtered[df_filtered['Shipper Name'] != '-']
         
-        col_rev, col_con = st.columns(2)
-        
-        with col_rev:
-            st.subheader("🥇 Top 10 Customer (By Revenue)")
-            top_rev = df_cust.groupby('Shipper Name', as_index=False).agg({'Amount':'sum', 'User id':'count'}).rename(columns={'Amount':'Total Belanja', 'User id':'Total Resi'}).sort_values(by='Total Belanja', ascending=False).head(10)
-            
-            chart_rev = alt.Chart(top_rev).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5).encode(
-                x=alt.X('Total Belanja:Q', title='Total Revenue (Rp)'),
-                y=alt.Y('Shipper Name:N', sort='-x', title='Customer'),
-                color=alt.Color('Total Belanja:Q', scale=alt.Scale(scheme='blues'), legend=None),
-                tooltip=['Shipper Name', 'Total Belanja', 'Total Resi']
-            ).properties(height=400)
-            st.altair_chart(chart_rev, use_container_width=True)
-            
-            top_rev_tabel = top_rev.copy()
-            top_rev_tabel['Total Belanja'] = top_rev_tabel['Total Belanja'].apply(format_rupiah)
-            top_rev_tabel.index = range(1, len(top_rev_tabel) + 1)
-            st.dataframe(top_rev_tabel, use_container_width=True)
+        if df_cust.empty:
+            st.info("Tidak ada data Customer (Shipper Name) di rentang waktu/SCO ini.")
+        else:
+            col_rev, col_con = st.columns(2)
+            with col_rev:
+                st.subheader("🥇 Top 10 Customer (By Revenue)")
+                top_rev = df_cust.groupby('Shipper Name', as_index=False).agg({'Amount':'sum', 'User id':'count'}).rename(columns={'Amount':'Total Belanja', 'User id':'Total Resi'}).sort_values(by='Total Belanja', ascending=False).head(10)
+                
+                chart_rev = alt.Chart(top_rev).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5).encode(
+                    x=alt.X('Total Belanja:Q', title='Total Revenue (Rp)'),
+                    y=alt.Y('Shipper Name:N', sort='-x', title='Customer'),
+                    color=alt.Color('Total Belanja:Q', scale=alt.Scale(scheme='blues'), legend=None),
+                    tooltip=['Shipper Name', 'Total Belanja', 'Total Resi']
+                ).properties(height=400)
+                st.altair_chart(chart_rev, use_container_width=True)
+                
+                top_rev_tabel = top_rev.copy()
+                top_rev_tabel['Total Belanja'] = top_rev_tabel['Total Belanja'].apply(format_rupiah)
+                top_rev_tabel.index = range(1, len(top_rev_tabel) + 1)
+                st.dataframe(top_rev_tabel, use_container_width=True)
 
-        with col_con:
-            st.subheader("🔢 Top 10 Customer (By Connote)")
-            top_con = df_cust.groupby('Shipper Name', as_index=False).agg({'User id':'count', 'Amount':'sum'}).rename(columns={'User id':'Total Resi', 'Amount':'Total Belanja'}).sort_values(by='Total Resi', ascending=False).head(10)
-            
-            chart_con = alt.Chart(top_con).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5).encode(
-                x=alt.X('Total Resi:Q', title='Total Transaksi (Resi)'),
-                y=alt.Y('Shipper Name:N', sort='-x', title='Customer'),
-                color=alt.Color('Total Resi:Q', scale=alt.Scale(scheme='oranges'), legend=None),
-                tooltip=['Shipper Name', 'Total Resi', 'Total Belanja']
-            ).properties(height=400)
-            st.altair_chart(chart_con, use_container_width=True)
-            
-            top_con_tabel = top_con.copy()
-            top_con_tabel['Total Belanja'] = top_con_tabel['Total Belanja'].apply(format_rupiah)
-            top_con_tabel.index = range(1, len(top_con_tabel) + 1)
-            st.dataframe(top_con_tabel, use_container_width=True)
+            with col_con:
+                st.subheader("🔢 Top 10 Customer (By Connote)")
+                top_con = df_cust.groupby('Shipper Name', as_index=False).agg({'User id':'count', 'Amount':'sum'}).rename(columns={'User id':'Total Resi', 'Amount':'Total Belanja'}).sort_values(by='Total Resi', ascending=False).head(10)
+                
+                chart_con = alt.Chart(top_con).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5).encode(
+                    x=alt.X('Total Resi:Q', title='Total Transaksi (Resi)'),
+                    y=alt.Y('Shipper Name:N', sort='-x', title='Customer'),
+                    color=alt.Color('Total Resi:Q', scale=alt.Scale(scheme='oranges'), legend=None),
+                    tooltip=['Shipper Name', 'Total Resi', 'Total Belanja']
+                ).properties(height=400)
+                st.altair_chart(chart_con, use_container_width=True)
+                
+                top_con_tabel = top_con.copy()
+                top_con_tabel['Total Belanja'] = top_con_tabel['Total Belanja'].apply(format_rupiah)
+                top_con_tabel.index = range(1, len(top_con_tabel) + 1)
+                st.dataframe(top_con_tabel, use_container_width=True)
 
     # ==========================================
     # TAB 3: KINERJA SCO
@@ -265,31 +320,34 @@ try:
     with tab3:
         st.header("👨‍💼 Rata-Rata Hari Masuk & Produktivitas SCO")
         
-        df_rata2_clean = df_rata2.loc[:, ~df_rata2.columns.str.contains('^Unnamed')].copy()
-        
-        for col in ['Revenue', 'Rata_Pendapatan_Per_Hari']:
-            if col in df_rata2_clean.columns:
-                df_rata2_clean[col] = pd.to_numeric(df_rata2_clean[col], errors='coerce').fillna(0)
-                df_rata2_clean[f"{col}_Num"] = df_rata2_clean[col] 
-                df_rata2_clean[col] = df_rata2_clean[col].apply(format_rupiah)
-                
-        if 'Rata_Transaksi_Per_Hari' in df_rata2_clean.columns:
-            df_rata2_clean['Rata_Transaksi_Per_Hari'] = pd.to_numeric(df_rata2_clean['Rata_Transaksi_Per_Hari'], errors='coerce').fillna(0).round(1)
+        if df_rata2.empty:
+            st.info("Data Rata-Rata untuk SCO terpilih kosong.")
+        else:
+            df_rata2_clean = df_rata2.loc[:, ~df_rata2.columns.str.contains('^Unnamed')].copy()
+            
+            for col in ['Revenue', 'Rata_Pendapatan_Per_Hari']:
+                if col in df_rata2_clean.columns:
+                    df_rata2_clean[col] = pd.to_numeric(df_rata2_clean[col], errors='coerce').fillna(0)
+                    df_rata2_clean[f"{col}_Num"] = df_rata2_clean[col] 
+                    df_rata2_clean[col] = df_rata2_clean[col].apply(format_rupiah)
+                    
+            if 'Rata_Transaksi_Per_Hari' in df_rata2_clean.columns:
+                df_rata2_clean['Rata_Transaksi_Per_Hari'] = pd.to_numeric(df_rata2_clean['Rata_Transaksi_Per_Hari'], errors='coerce').fillna(0).round(1)
 
-        if 'Rata_Pendapatan_Per_Hari_Num' in df_rata2_clean.columns:
-            st.subheader("📊 Rata-Rata Pendapatan Harian Tiap Kasir")
-            chart_absensi = alt.Chart(df_rata2_clean).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-                x=alt.X('User id:N', title='Kasir (SCO)', sort='-y'),
-                y=alt.Y('Rata_Pendapatan_Per_Hari_Num:Q', title='Rata-Rata Pendapatan (Rp)'),
-                color=alt.Color('User id:N', scale=alt.Scale(scheme='set2'), legend=None),
-                tooltip=['User id', 'Hari_Masuk', 'Rata_Pendapatan_Per_Hari']
-            ).properties(height=350)
-            st.altair_chart(chart_absensi, use_container_width=True)
-        
-        st.markdown("---")
-        st.subheader("📋 Tabel Detail Produktivitas")
-        cols_to_show = [c for c in df_rata2_clean.columns if not c.endswith('_Num')]
-        st.dataframe(df_rata2_clean[cols_to_show], use_container_width=True)
+            if 'Rata_Pendapatan_Per_Hari_Num' in df_rata2_clean.columns:
+                st.subheader("📊 Rata-Rata Pendapatan Harian Tiap Kasir")
+                chart_absensi = alt.Chart(df_rata2_clean).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
+                    x=alt.X('User id:N', title='Kasir (SCO)', sort='-y'),
+                    y=alt.Y('Rata_Pendapatan_Per_Hari_Num:Q', title='Rata-Rata Pendapatan (Rp)'),
+                    color=alt.Color('User id:N', scale=alt.Scale(scheme='set2'), legend=None),
+                    tooltip=['User id', 'Hari_Masuk', 'Rata_Pendapatan_Per_Hari']
+                ).properties(height=350)
+                st.altair_chart(chart_absensi, use_container_width=True)
+            
+            st.markdown("---")
+            st.subheader("📋 Tabel Detail Produktivitas")
+            cols_to_show = [c for c in df_rata2_clean.columns if not c.endswith('_Num')]
+            st.dataframe(df_rata2_clean[cols_to_show], use_container_width=True)
 
     # ==========================================
     # TAB 4: POLA HARI & JAM SIBUK
@@ -302,11 +360,11 @@ try:
         with a1:
             st.subheader("📅 Pola Sibuk (Berdasarkan Hari)")
             hari_map = {'Monday': 'Senin', 'Tuesday': 'Selasa', 'Wednesday': 'Rabu', 'Thursday': 'Kamis', 'Friday': 'Jumat', 'Saturday': 'Sabtu', 'Sunday': 'Minggu'}
-            df['Hari_Inggris'] = pd.to_datetime(df['Date']).dt.day_name()
-            df['Hari'] = df['Hari_Inggris'].map(hari_map)
+            df_filtered['Hari_Inggris'] = df_filtered['Date_Parsed'].dt.day_name()
+            df_filtered['Hari'] = df_filtered['Hari_Inggris'].map(hari_map)
             hari_order = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu']
             
-            pola_df = df.groupby('Hari', as_index=False).size().rename(columns={'size':'Total Transaksi'})
+            pola_df = df_filtered.groupby('Hari', as_index=False).size().rename(columns={'size':'Total Transaksi'})
             
             chart_pola = alt.Chart(pola_df).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
                 x=alt.X('Hari:N', sort=hari_order, title='Hari Operasional'),
@@ -322,8 +380,8 @@ try:
             
         with a2:
             st.subheader("⏰ Jam Sibuk (Rush Hour)")
-            df['Jam'] = pd.to_datetime(df['Date']).dt.hour
-            jam_df = df.groupby('Jam', as_index=False).size().rename(columns={'size':'Total Transaksi'})
+            df_filtered['Jam'] = df_filtered['Date_Parsed'].dt.hour
+            jam_df = df_filtered.groupby('Jam', as_index=False).size().rename(columns={'size':'Total Transaksi'})
             jam_df['Jam_Label'] = jam_df['Jam'].apply(lambda x: f"{x:02d}:00")
             
             chart_jam = alt.Chart(jam_df).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
@@ -347,7 +405,7 @@ try:
         s1, s2 = st.columns(2)
         with s1:
             st.subheader("📦 Layanan Paling Laku")
-            top_serv = df['Services'].value_counts().reset_index().rename(columns={'Services':'Jenis Layanan', 'count':'Total Dipakai'})
+            top_serv = df_filtered['Services'].value_counts().reset_index().rename(columns={'Services':'Jenis Layanan', 'count':'Total Dipakai'})
             
             chart_serv = alt.Chart(top_serv).mark_arc(innerRadius=70).encode(
                 theta=alt.Theta(field="Total Dipakai", type="quantitative"),
@@ -358,7 +416,7 @@ try:
             
         with s2:
             st.subheader("💳 Metode Pembayaran")
-            top_pay = df['Payment type'].value_counts().reset_index().rename(columns={'Payment type':'Metode', 'count':'Total Transaksi'})
+            top_pay = df_filtered['Payment type'].value_counts().reset_index().rename(columns={'Payment type':'Metode', 'count':'Total Transaksi'})
             
             chart_pay = alt.Chart(top_pay).mark_bar(size=70, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
                 x=alt.X('Metode:N', sort='-y', title='Tipe Pembayaran'),
@@ -369,11 +427,11 @@ try:
             st.altair_chart(chart_pay, use_container_width=True)
 
     # ==========================================
-    # TAB 6: TREN LINTAS BULAN
+    # TAB 6: TREN LINTAS BULAN (TETAP GLOBAL)
     # ==========================================
     with tab6:
         st.header("🚀 Pertumbuhan Bisnis (Akumulasi Seluruh Bulan)")
-        st.markdown("<p style='color:#a8b2d1 !important;'>Grafik ini menarik data dari <b>semua file Excel</b> yang ada di folder buat ngeliat tren jangka panjang.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color:#a8b2d1 !important;'>Catatan: Grafik ini tidak terpengaruh filter Sidebar karena menarik data <b>akumulasi dari seluruh file Excel</b>.</p>", unsafe_allow_html=True)
         
         if not df_all.empty:
             df_all['Sort_Bulan'] = pd.to_datetime(df_all['Date']).dt.strftime('%Y-%m')
@@ -389,10 +447,8 @@ try:
             
             b1, b2 = st.columns(2)
             
-            # --- Grafik Kiri (Revenue) ---
             with b1:
                 st.subheader("💰 Tren Pendapatan (Revenue)")
-                
                 base_rev = alt.Chart(tren_bulan).encode(
                     x=alt.X('Periode:N', sort=sort_order, title='Bulan', axis=alt.Axis(labelAngle=0, grid=False))
                 )
@@ -406,14 +462,11 @@ try:
                     y='Total Revenue:Q',
                     tooltip=['Periode', 'Total Revenue']
                 )
-                
                 chart_rev_all = (area_rev + line_rev + points_rev).properties(height=350)
                 st.altair_chart(chart_rev_all, use_container_width=True)
                 
-            # --- Grafik Kanan (Transaksi) ---
             with b2:
                 st.subheader("📦 Tren Volume (Transaksi)")
-                
                 base_trx = alt.Chart(tren_bulan).encode(
                     x=alt.X('Periode:N', sort=sort_order, title='Bulan', axis=alt.Axis(labelAngle=0, grid=False))
                 )
@@ -427,7 +480,6 @@ try:
                     y='Total Transaksi:Q',
                     tooltip=['Periode', 'Total Transaksi']
                 )
-                
                 chart_trx_all = (area_trx + line_trx + points_trx).properties(height=350)
                 st.altair_chart(chart_trx_all, use_container_width=True)
                 
@@ -435,7 +487,6 @@ try:
             st.subheader("📋 Rekap Angka Bulanan")
             tren_tabel = tren_bulan[['Periode', 'Total Transaksi', 'Total Revenue']].copy()
             tren_tabel['Total Revenue'] = tren_tabel['Total Revenue'].apply(format_rupiah)
-            
             tren_tabel.index = range(1, len(tren_tabel) + 1)
             st.dataframe(tren_tabel, use_container_width=True)
         else:
