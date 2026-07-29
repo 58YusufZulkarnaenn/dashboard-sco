@@ -1,3 +1,9 @@
 streamlit
 pandas
+altair
 openpyxl
+streamlit-aggrid
+geopy
+streamlit-lottie
+requests
+pydeck
