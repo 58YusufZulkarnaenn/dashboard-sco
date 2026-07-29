@@ -695,28 +695,6 @@ with tab3:
         # POLISH: highlight baris juara (rank 1)
         st.dataframe(style_top_row(tabel_sco), use_container_width=True)
  
-        # FIX/NEW: dulu analisis "produktivitas per hari kerja" cuma ada utk KPI Cash (dari sheet
-        # 'Rata-Rata Hari Masuk'). Sekarang dihitung langsung dari Raw Data biar KPI lain (mis. Cashless)
-        # juga dapat insight yang setara, tanpa perlu sheet tambahan.
-        st.markdown("---")
-        st.subheader(f"📊 Produktivitas Harian SCO ({selected_kpi})")
-        prod_sco = df_filtered.groupby('SCO').agg(Total_Connote=('Revenue', 'count'), Total_Revenue=('Revenue', 'sum'), Hari_Masuk=('Date_Only', 'nunique')).reset_index()
-        prod_sco['Rata_Transaksi_Per_Hari'] = (prod_sco['Total_Connote'] / prod_sco['Hari_Masuk']).round(1)
-        prod_sco['Rata_Pendapatan_Per_Hari'] = (prod_sco['Total_Revenue'] / prod_sco['Hari_Masuk'])
-        prod_sco = prod_sco.sort_values('Rata_Pendapatan_Per_Hari', ascending=False)
- 
-        chart_prod = alt.Chart(prod_sco).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-            x=alt.X('SCO:N', title='SCO', sort='-y'), y=alt.Y('Rata_Pendapatan_Per_Hari:Q', title='Rata-Rata Pendapatan / Hari Kerja (Rp)'),
-            color=alt.Color('SCO:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None),
-            tooltip=['SCO', 'Hari_Masuk', 'Rata_Transaksi_Per_Hari', 'Rata_Pendapatan_Per_Hari']
-        ).properties(height=320)
-        st.altair_chart(chart_prod, use_container_width=True)
- 
-        prod_display = prod_sco.copy()
-        prod_display['Total_Revenue'] = prod_display['Total_Revenue'].apply(format_rupiah)
-        prod_display['Rata_Pendapatan_Per_Hari'] = prod_display['Rata_Pendapatan_Per_Hari'].apply(format_rupiah)
-        prod_display.index = range(1, len(prod_display) + 1)
-        st.dataframe(style_top_row(prod_display), use_container_width=True)
 
 # ==========================================
 # TAB 4: POLA HARI & JAM SIBUK
