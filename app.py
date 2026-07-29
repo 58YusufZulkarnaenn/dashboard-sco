@@ -3,8 +3,95 @@ import pandas as pd
 import altair as alt
 import glob
 
-# Setting tampilan web
+# ==========================================
+# 1. SETTING HALAMAN & INJEKSI CSS PREMIUM
+# ==========================================
 st.set_page_config(page_title="Dashboard SCO", page_icon="📦", layout="wide")
+
+def add_custom_css():
+    st.markdown("""
+    <style>
+    /* 1. Background Utama (Gradient Premium: Midnight Blue) */
+    [data-testid="stAppViewContainer"] {
+        background: linear-gradient(135deg, #141e30 0%, #243b55 100%);
+        color: #ffffff;
+    }
+    
+    /* 2. Transparansi Header Bawaan Streamlit */
+    [data-testid="stHeader"] {
+        background: rgba(0,0,0,0);
+    }
+    
+    /* 3. Sidebar dengan Efek Kaca (Glassmorphism) */
+    [data-testid="stSidebar"] {
+        background: rgba(20, 30, 48, 0.6) !important;
+        backdrop-filter: blur(15px);
+        -webkit-backdrop-filter: blur(15px);
+        border-right: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    /* 4. Kotak Angka (Metrics) - Efek Kartu Kaca */
+    [data-testid="stMetric"] {
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 15px;
+        padding: 20px;
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    
+    /* Efek hover saat kursor diarahkan ke kotak angka */
+    [data-testid="stMetric"]:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    /* Warna teks pada Metrics */
+    [data-testid="stMetricLabel"] {
+        color: #a8b2d1 !important;
+        font-weight: 600;
+        font-size: 1.1rem;
+    }
+    [data-testid="stMetricValue"] {
+        color: #64ffda !important;
+        font-weight: 800;
+    }
+    
+    /* 5. Styling TABS biar bentuknya kayak tombol modern */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+        background-color: rgba(255, 255, 255, 0.05);
+        border-radius: 15px;
+        padding: 10px;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .stTabs [data-baseweb="tab"] {
+        background-color: transparent !important;
+        border-radius: 10px !important;
+        color: #a8b2d1 !important;
+        padding: 10px 20px;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: rgba(100, 255, 218, 0.1) !important;
+        color: #64ffda !important;
+        border: 1px solid rgba(100, 255, 218, 0.3) !important;
+        box-shadow: 0 0 15px rgba(100, 255, 218, 0.1);
+    }
+    
+    /* Global Text Color Fixes */
+    h1, h2, h3, p, .stMarkdown {
+        color: #ffffff !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# Panggil fungsi CSS-nya di sini
+add_custom_css()
+
 
 # ==========================================
 # SIDEBAR KIRI: MESIN WAKTU (PILIH BULAN)
@@ -28,8 +115,8 @@ st.sidebar.success(f"Sedang menampilkan detail dari:\n**{selected_file}**")
 # HEADER UTAMA
 # ==========================================
 st.title("📊 Dashboard Performa Pengiriman KP Grand Taruma")
-st.markdown("(By Yusuf Zulkarnaen)")
-st.markdown("Rekapitulasi lengkap data operasional, performa tim, dan insight pelanggan.")
+st.markdown("<p style='color:#a8b2d1 !important; font-size:1.2rem;'>(By Yusuf Zulkarnaen)</p>", unsafe_allow_html=True)
+st.markdown("<p style='color:#e2e8f0 !important;'>Rekapitulasi lengkap data operasional, performa tim, dan insight pelanggan.</p>", unsafe_allow_html=True)
 st.markdown("---")
 
 @st.cache_data
@@ -110,7 +197,7 @@ try:
             df['Tanggal'] = pd.to_datetime(df['Date']).dt.date
             harian = df.groupby('Tanggal', as_index=False).size().rename(columns={'size':'Transaksi'})
             
-            chart_tren = alt.Chart(harian).mark_line(point=True, color='#29b5e8', strokeWidth=3).encode(
+            chart_tren = alt.Chart(harian).mark_line(point=True, color='#64ffda', strokeWidth=3).encode(
                 x=alt.X('Tanggal:T', title='Tanggal'),
                 y=alt.Y('Transaksi:Q', title='Jumlah Resi'),
                 tooltip=['Tanggal', 'Transaksi']
@@ -124,7 +211,7 @@ try:
             chart_sco = alt.Chart(rekap_user_df).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
                 x=alt.X('User id:N', sort='-y', title='Nama SCO'),
                 y=alt.Y('Pendapatan:Q', title='Total Revenue (Rp)'),
-                color=alt.Color('User id:N', scale=alt.Scale(scheme='pastel1'), legend=None),
+                color=alt.Color('User id:N', scale=alt.Scale(scheme='teals'), legend=None),
                 tooltip=['User id', 'Pendapatan']
             ).properties(height=300)
             st.altair_chart(chart_sco, use_container_width=True)
@@ -227,7 +314,7 @@ try:
                 color=alt.condition(
                     alt.datum['Total Transaksi'] == pola_df['Total Transaksi'].max(), 
                     alt.value('#ff4b4b'),
-                    alt.value('#ff9f9f')
+                    alt.value('#64ffda')
                 ),
                 tooltip=['Hari', 'Total Transaksi']
             ).properties(height=350)
@@ -245,7 +332,7 @@ try:
                 color=alt.condition(
                     alt.datum['Total Transaksi'] == jam_df['Total Transaksi'].max(), 
                     alt.value('#f5a623'),
-                    alt.value('#fbe1b6')
+                    alt.value('#64ffda')
                 ),
                 tooltip=['Jam_Label', 'Total Transaksi']
             ).properties(height=350)
@@ -282,16 +369,15 @@ try:
             st.altair_chart(chart_pay, use_container_width=True)
 
     # ==========================================
-    # TAB 6: TREN LINTAS BULAN (DESAIN BARU PREMIUM!)
+    # TAB 6: TREN LINTAS BULAN
     # ==========================================
     with tab6:
         st.header("🚀 Pertumbuhan Bisnis (Akumulasi Seluruh Bulan)")
-        st.markdown("Grafik ini menarik data dari **semua file Excel** yang ada di sistem lu buat ngeliat tren jangka panjang.")
+        st.markdown("<p style='color:#a8b2d1 !important;'>Grafik ini menarik data dari <b>semua file Excel</b> yang ada di folder buat ngeliat tren jangka panjang.</p>", unsafe_allow_html=True)
         
         if not df_all.empty:
-            # Format tanggal bulan
-            df_all['Sort_Bulan'] = pd.to_datetime(df_all['Date']).dt.strftime('%Y-%m') # Buat urutan mesin
-            df_all['Periode'] = pd.to_datetime(df_all['Date']).dt.strftime('%b %Y')    # Buat tulisan di grafik (Misal: May 2026)
+            df_all['Sort_Bulan'] = pd.to_datetime(df_all['Date']).dt.strftime('%Y-%m')
+            df_all['Periode'] = pd.to_datetime(df_all['Date']).dt.strftime('%b %Y')    
             
             tren_bulan = df_all.groupby(['Sort_Bulan', 'Periode'], as_index=False).agg({
                 'Amount': 'sum', 
@@ -310,21 +396,17 @@ try:
                 base_rev = alt.Chart(tren_bulan).encode(
                     x=alt.X('Periode:N', sort=sort_order, title='Bulan', axis=alt.Axis(labelAngle=0, grid=False))
                 )
-                # Bikin bayangan area
                 area_rev = base_rev.mark_area(opacity=0.2, color='#00b4d8', interpolate='monotone').encode(
                     y=alt.Y('Total Revenue:Q', title='Pendapatan (Rp)')
                 )
-                # Bikin garis melengkung (monotone)
-                line_rev = base_rev.mark_line(color='#0077b6', strokeWidth=4, interpolate='monotone').encode(
+                line_rev = base_rev.mark_line(color='#00d4ff', strokeWidth=4, interpolate='monotone').encode(
                     y='Total Revenue:Q'
                 )
-                # Bikin titik tebal
-                points_rev = base_rev.mark_circle(color='#03045e', size=120, opacity=1).encode(
+                points_rev = base_rev.mark_circle(color='#ffffff', size=120, opacity=1).encode(
                     y='Total Revenue:Q',
                     tooltip=['Periode', 'Total Revenue']
                 )
                 
-                # Tumpuk ketiga grafiknya
                 chart_rev_all = (area_rev + line_rev + points_rev).properties(height=350)
                 st.altair_chart(chart_rev_all, use_container_width=True)
                 
@@ -335,21 +417,17 @@ try:
                 base_trx = alt.Chart(tren_bulan).encode(
                     x=alt.X('Periode:N', sort=sort_order, title='Bulan', axis=alt.Axis(labelAngle=0, grid=False))
                 )
-                # Bikin bayangan area
                 area_trx = base_trx.mark_area(opacity=0.2, color='#ffb703', interpolate='monotone').encode(
                     y=alt.Y('Total Transaksi:Q', title='Jumlah Resi')
                 )
-                # Bikin garis melengkung
-                line_trx = base_trx.mark_line(color='#fb8500', strokeWidth=4, interpolate='monotone').encode(
+                line_trx = base_trx.mark_line(color='#ffea00', strokeWidth=4, interpolate='monotone').encode(
                     y='Total Transaksi:Q'
                 )
-                # Bikin titik tebal
-                points_trx = base_trx.mark_circle(color='#d00000', size=120, opacity=1).encode(
+                points_trx = base_trx.mark_circle(color='#ffffff', size=120, opacity=1).encode(
                     y='Total Transaksi:Q',
                     tooltip=['Periode', 'Total Transaksi']
                 )
                 
-                # Tumpuk ketiga grafiknya
                 chart_trx_all = (area_trx + line_trx + points_trx).properties(height=350)
                 st.altair_chart(chart_trx_all, use_container_width=True)
                 
@@ -365,3 +443,15 @@ try:
 
 except Exception as e:
     st.error(f"Waduh, ada error nih bro: {e}")
+```eof
+
+**Apa aja yang udah gua upgrade?**
+1. **Fungsi `add_custom_css()`:** Gua tambahin langsung di atas. Ini buat nyuntik desain premium ke Streamlit lu.
+2. **Gradient Background:** Warnanya sekarang pake *Midnight Blue* (`#141e30` ke `#243b55`). Ini warna favorit banget buat dashboard modern karena bikin teks dan grafik gampang dibaca tapi tetep elegan.
+3. **Glassmorphism (Efek Kaca):** 
+   - **Sidebar** sekarang agak transparan dan nge-blur background belakangnya.
+   - **Kotak Metrik (Angka-angka)** sekarang berbentuk kayak kartu melayang, pakai border tipis, efek blur transparan, dan *kalau lu arahin kursor mouse ke kotak angkanya (hover)*, kotaknya bakal sedikit ngangkat ke atas sama shadow-nya makin tebal! 🔥
+4. **Tabs ala Button:** Bagian tab di atas ("Dashboard Utama", "Top Customer", dll) bentuknya udah bukan teks datar lagi, tapi udah kayak kapsul (pill buttons). Kalo dipilih (aktif), warnanya jadi aksen neon hijau (*teal/cyan*).
+5. **Penyesuaian Warna Chart:** Gua ganti beberapa titik chart di *Tren Transaksi Harian* sama warna di Tab *Pola Hari* jadi `#64ffda` (Warna neon mint) biar nyambung sama tema gelapnya.
+
+**Tips biar maksimal:** Pas lu jalanin Streamlitnya, lu bisa ke menu pojok kanan atas `(Settings) -> Theme -> Pilih "Dark"` biar warna dasar chart altair-nya ikutan *blend in* sempurna dengan background ini. Coba di-save dan dirun bro, terus kabarin gua *feeling* liatnya gimana!
