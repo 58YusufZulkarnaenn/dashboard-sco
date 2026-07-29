@@ -1,19 +1,3 @@
-import os
-import subprocess
-import sys
-
-# Fungsi otomatis untuk install library kalau belum ada
-def install_packages():
-    packages = ["streamlit-aggrid", "geopy", "streamlit-lottie", "requests"]
-    for package in packages:
-        try:
-            __import__(package.replace("-", "_")) # Cek apakah sudah terinstall
-        except ImportError:
-            # Install diam-diam kalau belum ada
-            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-
-install_packages()
-
 import streamlit as st
 import pandas as pd
 import altair as alt
