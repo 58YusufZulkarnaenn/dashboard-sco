@@ -3,6 +3,7 @@ import pandas as pd
 import altair as alt
 import glob
 import os
+import pydeck as pdk
 import streamlit.components.v1 as components
 
 # ==========================================
@@ -151,7 +152,7 @@ def load_unified_data(file_list):
             
             if "cashless" in filename: kpi_type = "Cashless"
             elif "kredit auto" in filename: kpi_type = "Kredit Auto"
-            elif "kredit manual" in filename: kpi_type = "Kredit Manual"
+            elif "kredit manual" in kpi_type: kpi_type = "Kredit Manual"
             elif "cash" in filename: kpi_type = "Cash"
             else: kpi_type = "Cash"
                 
@@ -206,10 +207,13 @@ def format_rupiah(val):
     return f"Rp {val:,.0f}".replace(",", ".")
 
 # ==========================================
-# SIDEBAR KIRI: SISTEM HYBRID & LOTTIE
+# SIDEBAR KIRI: SISTEM HYBRID, GAMBAR & LOTTIE
 # ==========================================
 with st.sidebar:
-    # Lottie Animation Vektor via HTML (Tanpa Install)
+    # 1. Gambar Logo Asli (Direstore)
+    st.image("https://cdn-icons-png.flaticon.com/512/3063/3063822.png", width=100)
+    
+    # 2. Lottie Animation Vektor (Ditambah di bawah logo)
     components.html("""
     <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
     <lottie-player src="https://lottie.host/809c9918-0959-408a-b9c0-6d4ec08b4720/KxVlZzB4V5.json" background="transparent" speed="1" style="width: 100%; height: 180px;" loop autoplay></lottie-player>
@@ -256,7 +260,7 @@ if not list_file_kpi:
     st.sidebar.warning(f"File untuk KPI {selected_kpi} tidak ditemukan.")
     st.stop()
 
-# Langsung Bypass Filter (Fix dari yang sebelumnya)
+# Langsung Bypass Filter
 selected_files = list_file_kpi
 
 df_active, df_rata2_active = load_unified_data(selected_files)
@@ -307,7 +311,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "🏆 Top Customer", 
     f"👨‍💼 Kinerja SCO", 
     "⏰ Pola Waktu", 
-    "💳 Layanan",
+    "💳 Layanan & Payment",
     "📍 Pemetaan Destinasi",
     f"🚀 Tren {selected_kpi}",
     "🌐 Executive Summary"
@@ -541,7 +545,6 @@ with tab5:
 # ==========================================
 # TAB 6: PEMETAAN DESTINASI (3D HEAT-PILLAR)
 # ==========================================
-import pydeck as pdk
 with tab6:
     st.header(f"📍 Analisis Wilayah Destinasi ({selected_kpi})")
     df_dest = df_filtered[df_filtered['Destination'] != '-']
@@ -691,7 +694,6 @@ with tab8:
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # 1. Grafik dibuat Full Width ke samping
     st.subheader("📊 Komposisi Revenue SCO berdasarkan KPI")
     rekap_chart = df_global.groupby(['SCO', 'KPI'], as_index=False)['Revenue'].sum()
     chart_global = alt.Chart(rekap_chart).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
@@ -699,12 +701,11 @@ with tab8:
         y=alt.Y('Revenue:Q', title='Total Revenue (Rp)'),
         color=alt.Color('KPI:N', scale=alt.Scale(scheme='set2'), title='Jenis KPI'),
         tooltip=['SCO', 'KPI', 'Revenue']
-    ).properties(height=450) # Tinggi ditambah sedikit biar lega
+    ).properties(height=450)
     st.altair_chart(chart_global, use_container_width=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # 2. Tabel Master dibentang di bawahnya dengan rapi
     st.subheader("📋 Master Table Keseluruhan")
     
     pivot_resi = df_global.pivot_table(index='SCO', columns='KPI', values='Revenue', aggfunc='count', fill_value=0)
