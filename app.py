@@ -572,7 +572,7 @@ with tab6:
             r = pdk.Deck(
                 layers=[layer], initial_view_state=view_state,
                 tooltip={"text": "📍 {Destination}\n📦 Resi: {Total Resi}\n💰 Rev: Rp {Revenue}"},
-                map_style='mapbox://styles/mapbox/dark-v10'
+                map_style='dark'
             )
             st.pydeck_chart(r)
         else:
