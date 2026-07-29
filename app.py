@@ -1,8 +1,30 @@
+import os
+import subprocess
+import sys
+
+# Fungsi otomatis untuk install library kalau belum ada
+def install_packages():
+    packages = ["streamlit-aggrid", "geopy", "streamlit-lottie", "requests"]
+    for package in packages:
+        try:
+            __import__(package.replace("-", "_")) # Cek apakah sudah terinstall
+        except ImportError:
+            # Install diam-diam kalau belum ada
+            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+install_packages()
+
 import streamlit as st
 import pandas as pd
 import altair as alt
 import glob
 import os
+import requests
+
+# INI LIBRARY BARU UNTUK KOSMETIK & MESIN PINTAR
+from st_aggrid import AgGrid, GridOptionsBuilder, ColumnsAutoSizeMode
+from geopy.geocoders import Nominatim
+from streamlit_lottie import st_lottie
 
 # ==========================================
 # 1. SETTING HALAMAN & INJEKSI CSS PREMIUM
@@ -18,18 +40,13 @@ BRAND_GOLD = "#ffd166"
 BRAND_CYAN = "#00b4d8"
 BRAND_WHITE = "#ffffff"
 
-# Palet kategorikal (dipakai utk chart per-SCO, per-layanan, dll)
 BRAND_CATEGORICAL = [BRAND_TEAL, BRAND_GOLD, BRAND_CYAN, "#0096c7", "#48cae4", "#ffe066", "#80ffdb", "#ade8f4"]
-
-# Palet sequential/gradient (dipakai utk chart yang di-rank by value, ex: Top Customer)
 BRAND_SEQUENTIAL = ["#0f9b8e", "#14b8a6", "#2dd4bf", "#5eead4", "#99f6e4", "#64ffda"]
 BRAND_SEQUENTIAL_GOLD = ["#7a5c00", "#b8860b", "#daa520", "#e8b923", "#ffd166", "#ffe699"]
-
 
 def add_custom_css():
     st.markdown("""
     <style>
-    /* Injeksi Google Fonts (Plus Jakarta Sans) */
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
     
     html, body, [class*="css"] {
@@ -100,7 +117,6 @@ def add_custom_css():
         border-left: 5px solid #ffd166;
     }
 
-    /* ============ POLISH: Chart container hover glow ============ */
     [data-testid="stVegaLiteChart"], [data-testid="stArrowVegaLiteChart"] {
         border-radius: 15px;
         padding: 10px;
@@ -113,7 +129,6 @@ def add_custom_css():
         background: rgba(255, 255, 255, 0.02);
     }
     
-    /* pydeck map container glow */
     [data-testid="stDeckGlJsonChart"] {
         border-radius: 15px;
         overflow: hidden;
@@ -126,20 +141,19 @@ def add_custom_css():
         border: 1px solid rgba(100, 255, 218, 0.3);
     }
 
-    /* ============ POLISH: Dataframe/table rounded corners ============ */
-    [data-testid="stDataFrame"] {
+    /* Override AgGrid Container untuk blend sama tema dark */
+    .ag-theme-streamlit {
         border-radius: 15px;
         overflow: hidden;
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
         box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.25);
         transition: box-shadow 0.3s ease, border 0.3s ease;
     }
-    [data-testid="stDataFrame"]:hover {
+    .ag-theme-streamlit:hover {
         box-shadow: 0 10px 36px rgba(100, 255, 218, 0.15);
-        border: 1px solid rgba(100, 255, 218, 0.25);
+        border: 1px solid rgba(100, 255, 218, 0.25) !important;
     }
 
-    /* ============ FOOTER ============ */
     .app-footer {
         text-align: center;
         color: #a8b2d1;
@@ -151,7 +165,6 @@ def add_custom_css():
     }
     .app-footer b { color: #64ffda; }
 
-    /* ============ st.toast styling nudge ============ */
     [data-testid="stToast"] {
         background: rgba(15, 32, 39, 0.95) !important;
         border: 1px solid rgba(100, 255, 218, 0.3) !important;
@@ -163,7 +176,56 @@ def add_custom_css():
 add_custom_css()
 
 # ==========================================
-# 2. TEMA ALTAIR GLOBAL (SEAMLESS BACKGROUND)
+# FITUR BARU: ANIMASI LOTTIE
+# ==========================================
+@st.cache_data
+def load_lottieurl(url: str):
+    try:
+        r = requests.get(url)
+        if r.status_code != 200:
+            return None
+        return r.json()
+    except:
+        return None
+
+lottie_empty = load_lottieurl("https://lottie.host/8c0678a3-2c1b-4171-af63-1463132e01df/p3F2Q1MTh5.json")
+
+# ==========================================
+# FITUR BARU: TABEL AGGRID (EXCEL-LIKE)
+# ==========================================
+def render_aggrid(df, height=350):
+    """Merender DataFrame menggunakan AgGrid dengan fitur filter & export."""
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_default_column(resizable=True, sortable=True, filter=True, autoHeight=True)
+    gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=10)
+    
+    # Custom JS: Highlight baris juara 1 (warna emas tipis)
+    jscode = """
+    function(params) {
+        if (params.node.rowIndex === 0) {
+            return {
+                'backgroundColor': 'rgba(255, 209, 102, 0.15)',
+                'color': '#ffd166',
+                'fontWeight': 'bold'
+            };
+        }
+    }
+    """
+    gb.configure_grid_options(getRowStyle=jscode)
+    
+    gridOptions = gb.build()
+    
+    AgGrid(
+        df,
+        gridOptions=gridOptions,
+        theme='streamlit',
+        allow_unsafe_jscode=True,
+        columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS,
+        height=height
+    )
+
+# ==========================================
+# 2. TEMA ALTAIR GLOBAL
 # ==========================================
 def altair_dark_theme():
     return {
@@ -193,7 +255,7 @@ alt.themes.register("dark_custom", altair_dark_theme)
 alt.themes.enable("dark_custom")
 
 # ==========================================
-# NOTIFIKASI TOAST (Hanya muncul sekali saat web di-load)
+# NOTIFIKASI TOAST
 # ==========================================
 if 'welcome_toast' not in st.session_state:
     st.toast('🚀 Selamat datang di Dashboard KP Grand Taruma! Memuat data analitik...', icon='🔥')
@@ -236,7 +298,6 @@ def load_unified_data(file_list):
                 filename = os.path.basename(f).lower()
                 xls_input = f
             
-            # --- FIX TYPO DISINI BRO! (Dari kpi_type jadi filename) ---
             if "cashless" in filename: kpi_type = "Cashless"
             elif "kredit auto" in filename: kpi_type = "Kredit Auto"
             elif "kredit manual" in filename: kpi_type = "Kredit Manual" 
@@ -293,22 +354,53 @@ def load_unified_data(file_list):
 def format_rupiah(val):
     return f"Rp {val:,.0f}".replace(",", ".")
 
-# ------------------------------------------
-# POLISH: helper buat highlight baris juara (rank 1) di tabel ranking
-# ------------------------------------------
-def style_top_row(df):
-    """Kasih highlight emas tipis di baris pertama (baris juara) sebuah tabel ranking."""
-    def _highlight(row):
-        if row.name == df.index[0]:
-            return ['background-color: rgba(255, 209, 102, 0.18); font-weight: 700;'] * len(row)
-        return [''] * len(row)
-    return df.style.apply(_highlight, axis=1)
+# ==========================================
+# FITUR BARU: MESIN GEOCODING (OTOMATIS CARI KOORDINAT)
+# ==========================================
+CITY_COORDS = {
+    'JAKARTA': [-6.2088, 106.8456], 'BEKASI': [-6.2383, 106.9756], 
+    'BOGOR': [-6.5971, 106.7932], 'DEPOK': [-6.4025, 106.7942], 
+    'TANGERANG': [-6.1702, 106.6403], 'BANDUNG': [-6.9175, 107.6191], 
+    'SUKABUMI': [-6.9275, 106.9300], 'TAMBUN SELATAN': [-6.2652, 107.0543],
+    'SURABAYA': [-7.2504, 112.7688], 'SEMARANG': [-6.9667, 110.4167],
+    'MEDAN': [3.5952, 98.6722], 'BALI': [-8.4095, 115.1889],
+    'SOLO': [-7.5666, 110.8266], 'YOGYAKARTA': [-7.7956, 110.3695],
+    'MALANG': [-7.9839, 112.6214], 'MAKASSAR': [-5.1477, 119.4327],
+    'BANDA ACEH': [5.5483, 95.3238], 'MAGELANG': [-7.4797, 110.2177],
+    'CIREBON': [-6.7320, 108.5523], 'KENDARI': [-3.9985, 122.5127],
+    'AMBON': [-3.6954, 128.1814], 'JAYAPURA': [-2.5337, 140.7181],
+    'TARAKAN': [3.3148, 117.5925], 'BANDAR LAMPUNG': [-5.4500, 105.2667],
+    'PALEMBANG': [-2.9909, 104.7566], 'PEKANBARU': [0.5333, 101.4500],
+    'PADANG': [-0.9471, 100.3690], 'BANJARMASIN': [-3.3167, 114.5901],
+    'BALIKPAPAN': [-1.2379, 116.8529], 'PONTIANAK': [-0.0227, 109.3333],
+    'PENJARINGAN': [-6.1283, 106.7865], 'KELAPA DUA': [-6.2372, 106.6143],
+    'MEDAN SUNGGAL': [3.5786, 98.6256]
+}
+
+@st.cache_data(show_spinner=False)
+def get_coordinates(city_name):
+    if pd.isna(city_name) or city_name == "-":
+        return [None, None]
+    city_up = city_name.upper()
+    
+    # 1. Cek di kamus hardcode dulu biar instan
+    if city_up in CITY_COORDS:
+        return CITY_COORDS[city_up]
+    
+    # 2. Kalau kota baru pengiriman, cari pakai Geopy API
+    try:
+        geolocator = Nominatim(user_agent="sco_dashboard_grand_taruma")
+        location = geolocator.geocode(f"{city_name}, Indonesia")
+        if location:
+            return [location.latitude, location.longitude]
+    except:
+        pass
+    return [None, None]
 
 # ==========================================
 # SIDEBAR KIRI: SISTEM HYBRID & GAMBAR
 # ==========================================
 with st.sidebar:
-    # 1. Gambar Logo Asli aja yang dipake (Animasi rusak dicabut biar bersih)
     st.image("https://cdn-icons-png.flaticon.com/512/3063/3063822.png", width=100)
 
 st.sidebar.header("📁 Data Source (Hybrid)")
@@ -324,6 +416,7 @@ else:
     active_files = list_local
 
 if not active_files:
+    if lottie_empty: st_lottie(lottie_empty, height=200, key="empty_file")
     st.error("⚠️ Data server kosong dan belum ada file yang di-upload.")
     st.stop()
 
@@ -357,7 +450,7 @@ selected_files = list_file_kpi
 
 df_active, df_rata2_active = load_unified_data(selected_files)
 
-# --- SABUK PENGAMAN (FIX ERROR) ---
+# --- SABUK PENGAMAN ---
 if df_active.empty:
     st.warning("⚠️ Data kosong! Gagal memproses file untuk KPI yang dipilih.")
     st.stop()
@@ -402,7 +495,11 @@ st.markdown(f"Sedang menampilkan analitik untuk pilar: <b style='color:#64ffda;'
 st.markdown("---")
 
 if df_filtered.empty:
-    st.warning("⚠️ Data kosong pada rentang waktu atau SCO yang dipilih.")
+    if lottie_empty:
+        col_lot1, col_lot2, col_lot3 = st.columns([1,2,1])
+        with col_lot2:
+            st_lottie(lottie_empty, height=250, key="empty_filtered")
+    st.warning("⚠️ Data kosong pada rentang waktu atau SCO yang dipilih. Silakan sesuaikan filter Sidebar.")
     st.stop()
 
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
@@ -433,7 +530,6 @@ with tab1:
     srv_top = df_filtered['Service'].mode()[0] if not df_filtered['Service'].empty else "-"
     pay_top = df_filtered['Payment_Method'].mode()[0] if not df_filtered['Payment_Method'].empty else "-"
     
-    # POLISH: insight box beda ikon/warna tergantung seberapa dominan kontribusi Best SCO
     share_best = (best_user_rev / total_rev * 100) if total_rev > 0 else 0
     if share_best >= 40:
         insight_icon = "🔥"
@@ -507,12 +603,13 @@ with tab1:
         st.altair_chart(chart_dest_quick, use_container_width=True)
 
 # ==========================================
-# TAB 2: TOP CUSTOMER
+# TAB 2: TOP CUSTOMER (UPGRADED WITH AGGRID)
 # ==========================================
 with tab2:
     st.header(f"🏆 Analisis Top Customer ({selected_kpi})")
     df_cust = df_filtered[df_filtered['Customer'] != '-']
     if df_cust.empty:
+        if lottie_empty: st_lottie(lottie_empty, height=150, key="empty_cust")
         st.info("Tidak ada data Customer (Shipper Name) di rentang waktu/SCO ini.")
     else:
         col_rev, col_con = st.columns(2)
@@ -527,9 +624,9 @@ with tab2:
             
             top_rev_tabel = top_rev.copy()
             top_rev_tabel['Total Belanja'] = top_rev_tabel['Total Belanja'].apply(format_rupiah)
-            top_rev_tabel.index = range(1, len(top_rev_tabel) + 1)
-            # POLISH: highlight baris juara (rank 1)
-            st.dataframe(style_top_row(top_rev_tabel), use_container_width=True)
+            
+            # FITUR BARU: Rendering AgGrid
+            render_aggrid(top_rev_tabel)
 
         with col_con:
             st.subheader("🔢 Top 10 Customer (By Connote)")
@@ -542,12 +639,12 @@ with tab2:
             
             top_con_tabel = top_con.copy()
             top_con_tabel['Total Belanja'] = top_con_tabel['Total Belanja'].apply(format_rupiah)
-            top_con_tabel.index = range(1, len(top_con_tabel) + 1)
-            # POLISH: highlight baris juara (rank 1)
-            st.dataframe(style_top_row(top_con_tabel), use_container_width=True)
+            
+            # FITUR BARU: Rendering AgGrid
+            render_aggrid(top_con_tabel)
 
 # ==========================================
-# TAB 3: KINERJA SCO
+# TAB 3: KINERJA SCO (UPGRADED WITH AGGRID)
 # ==========================================
 with tab3:
     if selected_kpi == "Cash":
@@ -583,12 +680,14 @@ with tab3:
                     color=alt.Color('User id:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None), tooltip=['User id', 'Hari_Masuk', 'Rata_Pendapatan_Per_Hari']
                 ).properties(height=350)
                 st.altair_chart(chart_abs, use_container_width=True)
+                
             st.subheader("📋 Tabel Detail Kinerja (CASH)")
             cols = [c for c in df_r_clean.columns if not c.endswith('_Num')]
             df_r_display = df_r_clean[cols].copy()
-            df_r_display.index = range(1, len(df_r_display) + 1)
-            # POLISH: highlight baris juara (rank 1) berdasar urutan tabel apa adanya
-            st.dataframe(style_top_row(df_r_display), use_container_width=True)
+            
+            # FITUR BARU: Rendering AgGrid
+            render_aggrid(df_r_display)
+            
     else:
         st.header(f"👨‍💼 Rekapitulasi Kinerja SCO ({selected_kpi})")
         rekap_sco = df_filtered.groupby('SCO', as_index=False).agg(Total_Resi=('Revenue', 'count'), Total_Revenue=('Revenue', 'sum')).sort_values('Total_Revenue', ascending=False)
@@ -599,13 +698,15 @@ with tab3:
             color=alt.Color('SCO:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None), tooltip=['SCO', 'Total_Resi', 'Total_Revenue_Num']
         ).properties(height=350)
         st.altair_chart(chart_noncash, use_container_width=True)
+        
         tabel_sco = rekap_sco.copy()
         tabel_sco['Total_Revenue'] = tabel_sco['Total_Revenue'].apply(format_rupiah)
         tabel_sco = tabel_sco.drop(columns=['Total_Revenue_Num'])
-        tabel_sco.index = range(1, len(tabel_sco) + 1)
+        
         st.subheader(f"📋 Tabel Detail Kinerja ({selected_kpi})")
-        # POLISH: highlight baris juara (rank 1)
-        st.dataframe(style_top_row(tabel_sco), use_container_width=True)
+        
+        # FITUR BARU: Rendering AgGrid
+        render_aggrid(tabel_sco)
 
 # ==========================================
 # TAB 4: POLA HARI & JAM SIBUK
@@ -660,37 +761,20 @@ with tab5:
         st.altair_chart(chart_pay, use_container_width=True)
 
 # ==========================================
-# TAB 6: PEMETAAN DESTINASI (3D HEAT-PILLAR)
+# TAB 6: PEMETAAN DESTINASI (UPGRADED GEOCODING)
 # ==========================================
 with tab6:
     st.header(f"📍 Analisis Wilayah Destinasi ({selected_kpi})")
     df_dest = df_filtered[df_filtered['Destination'] != '-']
+    
     if not df_dest.empty:
         dest_df = df_dest.groupby('Destination', as_index=False).agg({'Revenue': 'sum', 'SCO': 'count'}).rename(columns={'SCO': 'Total Resi'}).sort_values('Total Resi', ascending=False)
         
         import pydeck as pdk
-        CITY_COORDS = {
-            'JAKARTA': [-6.2088, 106.8456], 'BEKASI': [-6.2383, 106.9756], 
-            'BOGOR': [-6.5971, 106.7932], 'DEPOK': [-6.4025, 106.7942], 
-            'TANGERANG': [-6.1702, 106.6403], 'BANDUNG': [-6.9175, 107.6191], 
-            'SUKABUMI': [-6.9275, 106.9300], 'TAMBUN SELATAN': [-6.2652, 107.0543],
-            'SURABAYA': [-7.2504, 112.7688], 'SEMARANG': [-6.9667, 110.4167],
-            'MEDAN': [3.5952, 98.6722], 'BALI': [-8.4095, 115.1889],
-            'SOLO': [-7.5666, 110.8266], 'YOGYAKARTA': [-7.7956, 110.3695],
-            'MALANG': [-7.9839, 112.6214], 'MAKASSAR': [-5.1477, 119.4327],
-            'BANDA ACEH': [5.5483, 95.3238], 'MAGELANG': [-7.4797, 110.2177],
-            'CIREBON': [-6.7320, 108.5523], 'KENDARI': [-3.9985, 122.5127],
-            'AMBON': [-3.6954, 128.1814], 'JAYAPURA': [-2.5337, 140.7181],
-            'TARAKAN': [3.3148, 117.5925], 'BANDAR LAMPUNG': [-5.4500, 105.2667],
-            'PALEMBANG': [-2.9909, 104.7566], 'PEKANBARU': [0.5333, 101.4500],
-            'PADANG': [-0.9471, 100.3690], 'BANJARMASIN': [-3.3167, 114.5901],
-            'BALIKPAPAN': [-1.2379, 116.8529], 'PONTIANAK': [-0.0227, 109.3333],
-            'PENJARINGAN': [-6.1283, 106.7865], 'KELAPA DUA': [-6.2372, 106.6143],
-            'MEDAN SUNGGAL': [3.5786, 98.6256]
-        }
         
-        dest_df['lat'] = dest_df['Destination'].apply(lambda x: CITY_COORDS.get(x, [None, None])[0])
-        dest_df['lon'] = dest_df['Destination'].apply(lambda x: CITY_COORDS.get(x, [None, None])[1])
+        # FITUR BARU: Menarik koordinat secara otomatis/dinamis via fungsi get_coordinates
+        dest_df['lat'] = dest_df['Destination'].apply(lambda x: get_coordinates(x)[0])
+        dest_df['lon'] = dest_df['Destination'].apply(lambda x: get_coordinates(x)[1])
         
         map_df = dest_df.dropna(subset=['lat', 'lon']).copy()
         
@@ -701,8 +785,6 @@ with tab6:
             max_resi = map_df['Total Resi'].max()
             min_resi = map_df['Total Resi'].min()
             
-            # POLISH: gradient warna diselaraskan ke tema brand (teal gelap -> teal terang -> emas)
-            # dari rgb(15,155,142) [BRAND_TEAL_DARK] ke rgb(255,209,102) [BRAND_GOLD]
             def get_color(resi):
                 if max_resi == min_resi:
                     norm = 0.5
@@ -732,7 +814,6 @@ with tab6:
             
             view_state = pdk.ViewState(latitude=-6.2, longitude=110.0, zoom=5, pitch=50, bearing=15)
             
-            # POLISH: tooltip pydeck dikustom jadi dark + aksen teal biar nyatu sama tema
             r = pdk.Deck(
                 layers=[layer], initial_view_state=view_state,
                 tooltip={
@@ -751,13 +832,14 @@ with tab6:
             )
             st.pydeck_chart(r)
         else:
-            st.info("💡 Peta logistik belum bisa ditampilkan. Pastikan nama kota sudah ada di kamus sistem.")
+            st.info("💡 Peta logistik belum bisa ditampilkan. Tidak ada kota yang berhasil ditarik koordinatnya.")
             
         st.markdown("---")
         
         st.subheader("📊 Rincian Top Destinasi")
-        d1, d2 = st.columns([2, 1])
+        d1, d2 = st.columns([1, 1])
         top15_df = dest_df.head(15).copy()
+        
         with d1:
             chart_dest = alt.Chart(top15_df).mark_arc(innerRadius=70, cornerRadius=4).encode(
                 theta=alt.Theta(field="Total Resi", type="quantitative"),
@@ -766,14 +848,14 @@ with tab6:
             ).properties(height=400)
             st.altair_chart(chart_dest, use_container_width=True)
         with d2:
-            top15_df.index = range(1, len(top15_df) + 1) 
-            # POLISH: highlight baris juara (rank 1)
-            st.dataframe(style_top_row(top15_df[['Destination', 'Total Resi']]), use_container_width=True)
+            # FITUR BARU: Rendering AgGrid
+            render_aggrid(top15_df[['Destination', 'Total Resi', 'Revenue']], height=400)
+            
     else:
         st.info("Data destinasi tidak tersedia di file ini.")
 
 # ==========================================
-# TAB 7: TREN LINTAS BULAN
+# TAB 7: TREN LINTAS BULAN (UPGRADED DENGAN AGGRID)
 # ==========================================
 with tab7:
     st.header(f"🚀 Pertumbuhan Bisnis - {selected_kpi.upper()}")
@@ -806,11 +888,12 @@ with tab7:
         st.subheader("📋 Master Table Tren Bulanan")
         tabel_tren = tren_bulan.copy()
         tabel_tren['Total Revenue'] = tabel_tren['Total Revenue'].apply(format_rupiah)
-        tabel_tren.index = range(1, len(tabel_tren) + 1)
-        st.dataframe(tabel_tren[['Periode', 'Total Transaksi', 'Total Revenue']], use_container_width=True)
+        
+        # FITUR BARU: Rendering AgGrid
+        render_aggrid(tabel_tren[['Periode', 'Total Transaksi', 'Total Revenue']])
 
 # ==========================================
-# TAB 8: EXECUTIVE SUMMARY (Full Width Chart & Table)
+# TAB 8: EXECUTIVE SUMMARY (UPGRADED DENGAN AGGRID)
 # ==========================================
 with tab8:
     st.header("🌐 Executive Summary (Master Global)")
@@ -859,9 +942,8 @@ with tab8:
     for c in rev_cols:
         global_rekap[c] = global_rekap[c].apply(format_rupiah)
         
-    global_rekap.index = range(1, len(global_rekap) + 1)
-    # POLISH: highlight baris juara (rank 1) — sudah ke-sort by Total Pendapatan Akhir
-    st.dataframe(style_top_row(global_rekap), use_container_width=True)
+    # FITUR BARU: Rendering AgGrid
+    render_aggrid(global_rekap, height=500)
 
 # ==========================================
 # FOOTER
