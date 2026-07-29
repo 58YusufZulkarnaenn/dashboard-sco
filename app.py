@@ -216,12 +216,10 @@ for f in active_files:
     elif selected_kpi not in ["Cash", "Cashless"] and selected_kpi.lower() in fname:
         list_file_kpi.append(f)
 
-if not list_file_kpi:
+    if not list_file_kpi:
         st.sidebar.warning(f"File untuk KPI {selected_kpi} tidak ditemukan.")
         st.stop()
 
-    # Langsung teruskan file yang udah disaring otomatis tanpa perlu multiselect lagi
-    selected_files = list_file_kpi
 
 # 4. LOAD ACTIVE MASTER 
 df_active, df_rata2_active = load_unified_data(selected_files)
