@@ -120,6 +120,9 @@ try:
             
             top_rev_tabel = top_rev.copy()
             top_rev_tabel['Total Belanja'] = top_rev_tabel['Total Belanja'].apply(format_rupiah)
+
+            top_rev_tabel.index = range(1, len(top_rev_tabel) + 1)
+            
             st.dataframe(top_rev_tabel, use_container_width=True)
 
         # --- Kanan: By Connote ---
@@ -138,6 +141,9 @@ try:
             
             top_con_tabel = top_con.copy()
             top_con_tabel['Total Belanja'] = top_con_tabel['Total Belanja'].apply(format_rupiah)
+
+            top_rev_tabel.index = range(1, len(top_rev_tabel) + 1)
+            
             st.dataframe(top_con_tabel, use_container_width=True)
 
     # ==========================================
