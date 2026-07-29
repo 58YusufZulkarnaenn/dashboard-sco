@@ -1,31 +1,56 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
+import glob
+import os
 
 # Setting tampilan web
 st.set_page_config(page_title="Dashboard SCO", page_icon="📦", layout="wide")
 
+# ==========================================
+# SIDEBAR KIRI: MESIN WAKTU (PILIH BULAN)
+# ==========================================
+st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3063/3063822.png", width=100) # Logo box kecil
+st.sidebar.header("📅 Pengaturan Waktu")
+st.sidebar.markdown("Pilih periode data yang mau ditampilkan.")
+
+# Mesin pencari file otomatis di folder GitHub lu
+list_file_excel = glob.glob("*.xlsx")
+# Bersihin dari file temporary (kalau ada)
+list_file_excel = [f for f in list_file_excel if not f.startswith("~$")]
+
+if len(list_file_excel) == 0:
+    st.error("Waduh, belum ada file Excel yang terdeteksi nih bro. Upload dulu ke GitHub ya!")
+    st.stop() # Berhentiin web biar nggak crash
+
+# Dropdown menu buat milih file
+selected_file = st.sidebar.selectbox("📂 Pilih File Periode:", list_file_excel)
+
+st.sidebar.markdown("---")
+st.sidebar.success(f"Sedang menampilkan data dari:\n**{selected_file}**")
+
+# ==========================================
+# HEADER UTAMA
+# ==========================================
 st.title("📊 Dashboard Performa Pengiriman KP Grand Taruma")
 st.markdown("(By Yusuf Zulkarnaen)")
 st.markdown("Rekapitulasi lengkap data operasional, performa tim, dan insight pelanggan.")
 st.markdown("---")
 
 @st.cache_data
-def load_data():
-    file_path = "REKAP DATA CASH MEI 2026.xlsx"
+def load_data(file_path):
     xls = pd.ExcelFile(file_path)
     df_raw = pd.read_excel(xls, "Raw Data")
     df_rata2 = pd.read_excel(xls, "Rata-Rata Hari Masuk")
     return df_raw, df_rata2
 
-# Fungsi biar gampang ubah ke Rupiah
 def format_rupiah(val):
     return f"Rp {val:,.0f}".replace(",", ".")
 
 try:
-    df, df_rata2 = load_data()
+    # SEKARANG DATANYA NGAMBIL DARI FILE YANG DIPILIH DI SIDEBAR
+    df, df_rata2 = load_data(selected_file)
     
-    # NAMA TAB 4 BERUBAH JADI POLA & JAM SIBUK
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📈 Dashboard Utama", 
         "🏆 Top Customer", 
@@ -38,7 +63,7 @@ try:
     # TAB 1: DASHBOARD UTAMA
     # ==========================================
     with tab1:
-        st.header("Ringkasan Performa Bulan Ini")
+        st.header("Ringkasan Performa")
         
         total_resi = len(df)
         total_rev = df['Amount'].sum()
@@ -103,7 +128,6 @@ try:
         
         col_rev, col_con = st.columns(2)
         
-        # --- Kiri: By Revenue ---
         with col_rev:
             st.subheader("🥇 Top 10 Customer (By Revenue)")
             top_rev = df_cust.groupby('Shipper Name', as_index=False).agg({'Amount':'sum', 'User id':'count'}).rename(columns={'Amount':'Total Belanja', 'User id':'Total Resi'}).sort_values(by='Total Belanja', ascending=False).head(10)
@@ -121,7 +145,6 @@ try:
             top_rev_tabel.index = range(1, len(top_rev_tabel) + 1)
             st.dataframe(top_rev_tabel, use_container_width=True)
 
-        # --- Kanan: By Connote ---
         with col_con:
             st.subheader("🔢 Top 10 Customer (By Connote)")
             top_con = df_cust.groupby('Shipper Name', as_index=False).agg({'User id':'count', 'Amount':'sum'}).rename(columns={'User id':'Total Resi', 'Amount':'Total Belanja'}).sort_values(by='Total Resi', ascending=False).head(10)
@@ -172,14 +195,13 @@ try:
         st.dataframe(df_rata2_clean[cols_to_show], use_container_width=True)
 
     # ==========================================
-    # TAB 4: POLA HARI & JAM SIBUK (DIROMBAK TOTAL)
+    # TAB 4: POLA HARI & JAM SIBUK
     # ==========================================
     with tab4:
         st.header("⏰ Analisis Pola Hari & Jam Sibuk (Rush Hour)")
         
         a1, a2 = st.columns(2)
         
-        # --- KIRI: Pola Hari ---
         with a1:
             st.subheader("📅 Pola Sibuk (Berdasarkan Hari)")
             hari_map = {'Monday': 'Senin', 'Tuesday': 'Selasa', 'Wednesday': 'Rabu', 'Thursday': 'Kamis', 'Friday': 'Jumat', 'Saturday': 'Sabtu', 'Sunday': 'Minggu'}
@@ -194,32 +216,26 @@ try:
                 y=alt.Y('Total Transaksi:Q', title='Jumlah Transaksi'),
                 color=alt.condition(
                     alt.datum['Total Transaksi'] == pola_df['Total Transaksi'].max(), 
-                    alt.value('#ff4b4b'), # Merah nyala
-                    alt.value('#ff9f9f')  # Pink pudar
+                    alt.value('#ff4b4b'),
+                    alt.value('#ff9f9f')
                 ),
                 tooltip=['Hari', 'Total Transaksi']
             ).properties(height=350)
             st.altair_chart(chart_pola, use_container_width=True)
             
-        # --- KANAN: Jam Sibuk (Rush Hour) ---
         with a2:
             st.subheader("⏰ Jam Sibuk (Rush Hour)")
-            
-            # Kita ekstrak Jam langsung dari kolom Date di Excel lu
             df['Jam'] = pd.to_datetime(df['Date']).dt.hour
             jam_df = df.groupby('Jam', as_index=False).size().rename(columns={'size':'Total Transaksi'})
-            
-            # Bikin labelnya cakep, misal angka 14 jadi "14:00"
             jam_df['Jam_Label'] = jam_df['Jam'].apply(lambda x: f"{x:02d}:00")
             
-            # Bikin grafiknya
             chart_jam = alt.Chart(jam_df).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
                 x=alt.X('Jam_Label:N', sort=jam_df['Jam_Label'].tolist(), title='Jam Operasional'),
                 y=alt.Y('Total Transaksi:Q', title='Jumlah Paket Masuk'),
                 color=alt.condition(
                     alt.datum['Total Transaksi'] == jam_df['Total Transaksi'].max(), 
-                    alt.value('#f5a623'), # Oranye terang kalau Peak Hour
-                    alt.value('#fbe1b6')  # Oranye pudar buat jam biasa
+                    alt.value('#f5a623'),
+                    alt.value('#fbe1b6')
                 ),
                 tooltip=['Jam_Label', 'Total Transaksi']
             ).properties(height=350)
