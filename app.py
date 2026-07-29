@@ -483,6 +483,3 @@ with tab7:
         
     global_rekap.index = range(1, len(global_rekap) + 1)
     st.dataframe(global_rekap, use_container_width=True)
-
-except Exception as e:
-    st.error(f"Waduh, ada error nih bro: {e}")
