@@ -3,6 +3,7 @@ import pandas as pd
 import altair as alt
 import glob
 import os
+import pydeck as pdk
 
 # ==========================================
 # 1. SETTING HALAMAN & INJEKSI CSS PREMIUM
@@ -515,24 +516,84 @@ with tab5:
 # ==========================================
 # TAB 6: PEMETAAN DESTINASI
 # ==========================================
+# ==========================================
+# TAB 6: PEMETAAN DESTINASI (WITH 3D MAP)
+# ==========================================
 with tab6:
     st.header(f"📍 Analisis Wilayah Destinasi ({selected_kpi})")
     df_dest = df_filtered[df_filtered['Destination'] != '-']
     if not df_dest.empty:
-        dest_df = df_dest.groupby('Destination', as_index=False).agg({'Revenue': 'sum', 'SCO': 'count'}).rename(columns={'SCO': 'Total Resi'}).sort_values('Total Resi', ascending=False).head(15)
+        dest_df = df_dest.groupby('Destination', as_index=False).agg({'Revenue': 'sum', 'SCO': 'count'}).rename(columns={'SCO': 'Total Resi'}).sort_values('Total Resi', ascending=False)
         
+        # --- 1. KAMUS KOORDINAT (INI BAGIAN TUGAS LU NANTI BRO) ---
+        # Kalau ada kota yang belum muncul di peta, lu tinggal Googling "Latitude Longitude [Nama Kota]" 
+        # Terus masukin ke list di bawah ini dengan format 'NAMA KOTA': [Latitude, Longitude]
+        CITY_COORDS = {
+            'JAKARTA': [-6.2088, 106.8456], 'BEKASI': [-6.2383, 106.9756], 
+            'BOGOR': [-6.5971, 106.7932], 'DEPOK': [-6.4025, 106.7942], 
+            'TANGERANG': [-6.1702, 106.6403], 'BANDUNG': [-6.9175, 107.6191], 
+            'SUKABUMI': [-6.9275, 106.9300], 'TAMBUN SELATAN': [-6.2652, 107.0543],
+            'SURABAYA': [-7.2504, 112.7688], 'SEMARANG': [-6.9667, 110.4167],
+            'MEDAN': [3.5952, 98.6722], 'BALI': [-8.4095, 115.1889],
+            'SOLO': [-7.5666, 110.8266], 'YOGYAKARTA': [-7.7956, 110.3695],
+            'MALANG': [-7.9839, 112.6214], 'MAKASSAR': [-5.1477, 119.4327],
+            'BANDA ACEH': [5.5483, 95.3238], 'MAGELANG': [-7.4797, 110.2177]
+        }
+        
+        # --- 2. SISTEM PETA PREMIUM PYDECK ---
+        # Cocokin nama destinasi sama koordinat
+        dest_df['lat'] = dest_df['Destination'].apply(lambda x: CITY_COORDS.get(x, [None, None])[0])
+        dest_df['lon'] = dest_df['Destination'].apply(lambda x: CITY_COORDS.get(x, [None, None])[1])
+        
+        map_df = dest_df.dropna(subset=['lat', 'lon']).copy()
+        
+        if not map_df.empty:
+            st.subheader("🗺️ Peta 3D Persebaran Logistik")
+            st.markdown("<p style='color:#a8b2d1; font-size:0.9rem;'>Besar cahaya titik menandakan tingginya jumlah resi. (Bisa di-zoom & di-geser)</p>", unsafe_allow_html=True)
+            
+            # Bikin radius (ukuran titik) proporsional sama jumlah resi
+            map_df['radius'] = map_df['Total Resi'] * 800 
+            map_df['radius'] = map_df['radius'].clip(lower=4000, upper=60000) # Biar ga kegedean/kekecilan
+            
+            layer = pdk.Layer(
+                'ScatterplotLayer',
+                data=map_df,
+                get_position='[lon, lat]',
+                get_radius='radius',
+                get_fill_color='[100, 255, 218, 140]', # Warna Neon Cyan
+                get_line_color='[255, 255, 255]',
+                pickable=True,
+                auto_highlight=True
+            )
+            
+            # Kamera awal menghadap pulau Jawa
+            view_state = pdk.ViewState(latitude=-6.2, longitude=110.0, zoom=5, pitch=45)
+            
+            r = pdk.Deck(
+                layers=[layer], initial_view_state=view_state,
+                tooltip={"text": "📍 {Destination}\n📦 Resi: {Total Resi}\n💰 Rev: Rp {Revenue}"},
+                map_style='mapbox://styles/mapbox/dark-v10'
+            )
+            st.pydeck_chart(r)
+        else:
+            st.info("💡 Peta logistik menyembunyikan beberapa titik karena nama kota belum ada di kamus koordinat.")
+            
+        st.markdown("---")
+        
+        # --- 3. DIAGRAM LAMA TETEP ADA DI BAWAHNYA ---
+        st.subheader("📊 Rincian Top Destinasi")
         d1, d2 = st.columns([2, 1])
+        top15_df = dest_df.head(15).copy()
         with d1:
-            chart_dest = alt.Chart(dest_df).mark_arc(innerRadius=70, cornerRadius=4).encode(
+            chart_dest = alt.Chart(top15_df).mark_arc(innerRadius=70, cornerRadius=4).encode(
                 theta=alt.Theta(field="Total Resi", type="quantitative"),
                 color=alt.Color(field="Destination", type="nominal", scale=alt.Scale(scheme='tealblues'), legend=None),
                 tooltip=['Destination', 'Total Resi', 'Revenue']
             ).properties(height=400)
             st.altair_chart(chart_dest, use_container_width=True)
         with d2:
-            st.subheader("Top 15 Destinasi (Table)")
-            dest_df.index = range(1, len(dest_df) + 1) # FITUR BARU: Bikin index jadi rapi (1-15)
-            st.dataframe(dest_df[['Destination', 'Total Resi']], use_container_width=True)
+            top15_df.index = range(1, len(top15_df) + 1) 
+            st.dataframe(top15_df[['Destination', 'Total Resi']], use_container_width=True)
     else:
         st.info("Data destinasi tidak tersedia di file ini.")
 
