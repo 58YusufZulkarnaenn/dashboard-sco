@@ -217,11 +217,11 @@ for f in active_files:
         list_file_kpi.append(f)
 
 if not list_file_kpi:
-        st.sidebar.warning(f"File untuk KPI {selected_kpi} tidak ditemukan.")
-        st.stop()
+    st.sidebar.warning(f"File untuk KPI {selected_kpi} tidak ditemukan.")
+    st.stop()
 
-    # Langsung teruskan file yang udah disaring otomatis tanpa perlu multiselect lagi
-    selected_files = list_file_kpi
+# Langsung teruskan file yang udah disaring otomatis tanpa perlu multiselect lagi
+selected_files = list_file_kpi
 
 
 # 4. LOAD ACTIVE MASTER 
