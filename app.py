@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import glob
-import os
 
 # Setting tampilan web
 st.set_page_config(page_title="Dashboard SCO", page_icon="📦", layout="wide")
@@ -10,24 +9,20 @@ st.set_page_config(page_title="Dashboard SCO", page_icon="📦", layout="wide")
 # ==========================================
 # SIDEBAR KIRI: MESIN WAKTU (PILIH BULAN)
 # ==========================================
-st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3063/3063822.png", width=100) # Logo box kecil
+st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3063/3063822.png", width=100)
 st.sidebar.header("📅 Pengaturan Waktu")
 st.sidebar.markdown("Pilih periode data yang mau ditampilkan.")
 
-# Mesin pencari file otomatis di folder GitHub lu
 list_file_excel = glob.glob("*.xlsx")
-# Bersihin dari file temporary (kalau ada)
 list_file_excel = [f for f in list_file_excel if not f.startswith("~$")]
 
 if len(list_file_excel) == 0:
     st.error("Waduh, belum ada file Excel yang terdeteksi nih bro. Upload dulu ke GitHub ya!")
-    st.stop() # Berhentiin web biar nggak crash
+    st.stop()
 
-# Dropdown menu buat milih file
 selected_file = st.sidebar.selectbox("📂 Pilih File Periode:", list_file_excel)
-
 st.sidebar.markdown("---")
-st.sidebar.success(f"Sedang menampilkan data dari:\n**{selected_file}**")
+st.sidebar.success(f"Sedang menampilkan detail dari:\n**{selected_file}**")
 
 # ==========================================
 # HEADER UTAMA
@@ -37,6 +32,7 @@ st.markdown("(By Yusuf Zulkarnaen)")
 st.markdown("Rekapitulasi lengkap data operasional, performa tim, dan insight pelanggan.")
 st.markdown("---")
 
+# Fungsi baca 1 file (Buat Tab 1-5)
 @st.cache_data
 def load_data(file_path):
     xls = pd.ExcelFile(file_path)
@@ -44,26 +40,43 @@ def load_data(file_path):
     df_rata2 = pd.read_excel(xls, "Rata-Rata Hari Masuk")
     return df_raw, df_rata2
 
+# Fungsi baca SEMUA file (Khusus buat Tab Tren Lintas Bulan)
+@st.cache_data
+def load_all_data(file_list):
+    all_data = []
+    for f in file_list:
+        try:
+            df = pd.read_excel(f, sheet_name="Raw Data")
+            all_data.append(df)
+        except Exception as e:
+            pass
+    if all_data:
+        df_gabung = pd.concat(all_data, ignore_index=True)
+        return df_gabung
+    return pd.DataFrame()
+
 def format_rupiah(val):
     return f"Rp {val:,.0f}".replace(",", ".")
 
 try:
-    # SEKARANG DATANYA NGAMBIL DARI FILE YANG DIPILIH DI SIDEBAR
     df, df_rata2 = load_data(selected_file)
+    df_all = load_all_data(list_file_excel) # Tarik semua data diem-diem
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    # ADA 6 TAB SEKARANG!
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📈 Dashboard Utama", 
         "🏆 Top Customer", 
         "👨‍💼 Kinerja SCO", 
         "⏰ Pola & Jam Sibuk", 
-        "💳 Layanan & Payment"
+        "💳 Layanan & Payment",
+        "🚀 Tren Lintas Bulan"
     ])
     
     # ==========================================
     # TAB 1: DASHBOARD UTAMA
     # ==========================================
     with tab1:
-        st.header("Ringkasan Performa")
+        st.header("Ringkasan Performa Bulan Ini")
         
         total_resi = len(df)
         total_rev = df['Amount'].sum()
@@ -96,7 +109,7 @@ try:
         
         kiri, kanan = st.columns(2)
         with kiri:
-            st.subheader("📈 Tren Transaksi Harian")
+            st.subheader("📈 Tren Transaksi Harian (Bulan Ini)")
             df['Tanggal'] = pd.to_datetime(df['Date']).dt.date
             harian = df.groupby('Tanggal', as_index=False).size().rename(columns={'size':'Transaksi'})
             
@@ -270,6 +283,54 @@ try:
                 tooltip=['Metode', 'Total Transaksi']
             ).properties(height=350)
             st.altair_chart(chart_pay, use_container_width=True)
+
+    # ==========================================
+    # TAB 6: TREN LINTAS BULAN (BARU!)
+    # ==========================================
+    with tab6:
+        st.header("🚀 Pertumbuhan Bisnis (Akumulasi Seluruh Bulan)")
+        st.markdown("Grafik ini menarik data dari **semua file Excel** yang ada di sistem lu buat ngeliat tren jangka panjang.")
+        
+        if not df_all.empty:
+            # Format tanggal jadi Bulan-Tahun (Contoh: 2026-05, 2026-06)
+            df_all['Periode'] = pd.to_datetime(df_all['Date']).dt.strftime('%Y-%m')
+            
+            tren_bulan = df_all.groupby('Periode', as_index=False).agg({
+                'Amount': 'sum', 
+                'User id': 'count'
+            }).rename(columns={'Amount': 'Total Revenue', 'User id': 'Total Transaksi'})
+            
+            tren_bulan = tren_bulan.sort_values('Periode')
+            
+            b1, b2 = st.columns(2)
+            with b1:
+                st.subheader("💰 Tren Pendapatan (Revenue)")
+                chart_rev_all = alt.Chart(tren_bulan).mark_line(point=True, color='#28a745', strokeWidth=4).encode(
+                    x=alt.X('Periode:N', title='Bulan Tahun'),
+                    y=alt.Y('Total Revenue:Q', title='Pendapatan (Rp)'),
+                    tooltip=['Periode', 'Total Revenue']
+                ).properties(height=350)
+                st.altair_chart(chart_rev_all, use_container_width=True)
+                
+            with b2:
+                st.subheader("📦 Tren Volume (Transaksi)")
+                chart_trx_all = alt.Chart(tren_bulan).mark_line(point=True, color='#007bff', strokeWidth=4).encode(
+                    x=alt.X('Periode:N', title='Bulan Tahun'),
+                    y=alt.Y('Total Transaksi:Q', title='Jumlah Resi'),
+                    tooltip=['Periode', 'Total Transaksi']
+                ).properties(height=350)
+                st.altair_chart(chart_trx_all, use_container_width=True)
+                
+            st.markdown("---")
+            st.subheader("📋 Rekap Angka Bulanan")
+            tren_tabel = tren_bulan.copy()
+            tren_tabel['Total Revenue'] = tren_tabel['Total Revenue'].apply(format_rupiah)
+            
+            # Bikin urutan ranking 1, 2, 3..
+            tren_tabel.index = range(1, len(tren_tabel) + 1)
+            st.dataframe(tren_tabel, use_container_width=True)
+        else:
+            st.info("Wah, data belum cukup buat nampilin tren nih bro.")
 
 except Exception as e:
     st.error(f"Waduh, ada error nih bro: {e}")
