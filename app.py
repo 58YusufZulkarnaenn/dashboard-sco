@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
-import glob
-import os
+import io
 
 # ==========================================
 # 1. SETTING HALAMAN & INJEKSI CSS PREMIUM
@@ -12,34 +11,36 @@ st.set_page_config(page_title="Dashboard SCO", page_icon="📦", layout="wide")
 def add_custom_css():
     st.markdown("""
     <style>
+    /* Ubah background jadi Midnight Blue/Dark Slate biar lebih elegan dan manjain mata */
     [data-testid="stAppViewContainer"] {
-        background: linear-gradient(135deg, #141e30 0%, #243b55 100%);
+        background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
         color: #ffffff;
     }
     [data-testid="stHeader"] { background: rgba(0,0,0,0); }
     [data-testid="stSidebar"] {
-        background: rgba(20, 30, 48, 0.6) !important;
+        background: rgba(15, 32, 39, 0.6) !important;
         backdrop-filter: blur(15px);
         -webkit-backdrop-filter: blur(15px);
         border-right: 1px solid rgba(255, 255, 255, 0.1);
     }
     [data-testid="stMetric"] {
         background: rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 15px;
         padding: 20px;
         box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        transition: transform 0.3s ease, box-shadow 0.3s ease, border 0.3s ease;
     }
     [data-testid="stMetric"]:hover {
         transform: translateY(-5px);
         box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.5);
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(100, 255, 218, 0.4);
     }
     [data-testid="stMetricLabel"] { color: #a8b2d1 !important; font-weight: 600; font-size: 1.1rem; }
     [data-testid="stMetricValue"] { color: #64ffda !important; font-weight: 800; }
+    [data-testid="stMetricDelta"] svg { fill: #00e676; }
     
     .stTabs [data-baseweb="tab-list"] {
         gap: 10px; background-color: rgba(255, 255, 255, 0.05);
@@ -48,12 +49,25 @@ def add_custom_css():
     .stTabs [data-baseweb="tab"] {
         background-color: transparent !important; border-radius: 10px !important;
         color: #a8b2d1 !important; padding: 10px 20px; font-weight: 600;
+        transition: all 0.3s ease;
     }
     .stTabs [aria-selected="true"] {
         background-color: rgba(100, 255, 218, 0.1) !important; color: #64ffda !important;
         border: 1px solid rgba(100, 255, 218, 0.3) !important; box-shadow: 0 0 15px rgba(100, 255, 218, 0.1);
     }
     h1, h2, h3, p, .stMarkdown { color: #ffffff !important; }
+    
+    /* Box Insight Otomatis */
+    .insight-box {
+        background: linear-gradient(90deg, rgba(100, 255, 218, 0.15) 0%, rgba(100, 255, 218, 0.0) 100%);
+        border-left: 5px solid #64ffda;
+        padding: 15px 20px;
+        border-radius: 5px 15px 15px 5px;
+        margin-bottom: 25px;
+        font-size: 1.1rem;
+        color: #e6f1ff;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -63,19 +77,25 @@ add_custom_css()
 # FUNGSI KELOLA DATA & STANDARISASI
 # ==========================================
 @st.cache_data
-def load_unified_data(file_paths):
+def load_unified_data(uploaded_files):
     all_raw = []
     all_rata2 = []
     
-    for f in file_paths:
+    for f in uploaded_files:
         try:
-            filename = os.path.basename(f).lower()
+            filename = f.name.lower()
             
-            # Deteksi KPI dari nama file
-            if "cashless" in filename: kpi_type = "Cashless"
-            elif "kredit auto" in filename: kpi_type = "Kredit Auto"
-            elif "kredit manual" in filename: kpi_type = "Kredit Manual"
-            else: kpi_type = "Cash"
+            # Deteksi KPI (Logika dipertegas biar gak bentrok Cash vs Cashless)
+            if "cashless" in filename: 
+                kpi_type = "Cashless"
+            elif "kredit auto" in filename: 
+                kpi_type = "Kredit Auto"
+            elif "kredit manual" in filename: 
+                kpi_type = "Kredit Manual"
+            elif "cash" in filename: 
+                kpi_type = "Cash"
+            else: 
+                kpi_type = "Cash"
                 
             xls = pd.ExcelFile(f)
             
@@ -85,7 +105,6 @@ def load_unified_data(file_paths):
                 
                 df_std['KPI'] = kpi_type
                 
-                # Standarisasi Kolom
                 col_sco = 'User id' if 'User id' in df.columns else ('User Id' if 'User Id' in df.columns else None)
                 df_std['SCO'] = df[col_sco] if col_sco else "UNKNOWN"
                 
@@ -101,6 +120,9 @@ def load_unified_data(file_paths):
                 df_std['Service'] = df[col_srv] if col_srv else "-"
                 
                 df_std['Customer'] = df['Shipper Name'].fillna("-") if 'Shipper Name' in df.columns else "-"
+                
+                # Fitur Baru: Destinasi
+                df_std['Destination'] = df['Destination'].fillna("-") if 'Destination' in df.columns else "-"
                 
                 if kpi_type == "Cashless":
                     col_pay = 'Marketplace_Clean' if 'Marketplace_Clean' in df.columns else ('Marketplace' if 'Marketplace' in df.columns else None)
@@ -129,20 +151,20 @@ def format_rupiah(val):
     return f"Rp {val:,.0f}".replace(",", ".")
 
 # ==========================================
-# SIDEBAR KIRI: PENGATURAN & FILTER
+# SIDEBAR KIRI: UPLOAD & FILTER
 # ==========================================
 st.sidebar.image("https://cdn-icons-png.flaticon.com/512/3063/3063822.png", width=100)
-st.sidebar.header("📅 Pengaturan Data")
+st.sidebar.header("📁 Upload File Data")
 
-list_file_excel = glob.glob("*.xlsx")
-list_file_excel = [f for f in list_file_excel if not f.startswith("~$")]
+# Fitur Baru: File Uploader langsung di web
+uploaded_files = st.sidebar.file_uploader("Upload File Excel (.xlsx)", type=['xlsx'], accept_multiple_files=True)
 
-if len(list_file_excel) == 0:
-    st.error("Belum ada file Excel yang terdeteksi bro. Upload filenya dulu!")
+if not uploaded_files:
+    st.info("👈 Belum ada file Excel yang di-upload bro. Silakan drag & drop filenya di sidebar untuk memulai!")
     st.stop()
 
-# 1. LOAD GLOBAL MASTER (Khusus buat Tab 7 yang kebal filter)
-df_global, _ = load_unified_data(tuple(list_file_excel))
+# 1. LOAD GLOBAL MASTER 
+df_global, _ = load_unified_data(uploaded_files)
 if df_global.empty:
     st.error("Gagal membaca data dari file Excel. Pastikan sheet 'Raw Data' ada di dalam file.")
     st.stop()
@@ -154,34 +176,47 @@ st.sidebar.header("🔍 Filter Analytics")
 available_kpis = df_global['KPI'].unique().tolist()
 selected_kpi = st.sidebar.selectbox("📊 Pilih Pilar KPI:", options=available_kpis)
 
-# 3. PILIH FILE BERDASARKAN KPI YANG DIPILIH
-list_file_kpi = [f for f in list_file_excel if selected_kpi.lower() in f.lower() or (selected_kpi == "Cash" and "cashless" not in f.lower() and "kredit" not in f.lower())]
+# 3. FIX BUG: Logika Pemilihan File yang Ketat (Cash vs Cashless)
+list_file_kpi = []
+for f in uploaded_files:
+    fname = f.name.lower()
+    if selected_kpi == "Cash" and "cashless" not in fname and "kredit" not in fname:
+        list_file_kpi.append(f)
+    elif selected_kpi == "Cashless" and "cashless" in fname:
+        list_file_kpi.append(f)
+    elif selected_kpi not in ["Cash", "Cashless"] and selected_kpi.lower() in fname:
+        list_file_kpi.append(f)
 
-selected_files_kpi = st.sidebar.multiselect(
-    f"📂 Pilih File {selected_kpi} (Bisa >1):", 
-    options=list_file_kpi,
-    default=list_file_kpi
+if not list_file_kpi:
+    st.sidebar.warning(f"File untuk KPI {selected_kpi} tidak ditemukan dalam daftar upload.")
+    st.stop()
+
+selected_file_names = st.sidebar.multiselect(
+    f"📂 Pilih File {selected_kpi}:", 
+    options=[f.name for f in list_file_kpi],
+    default=[f.name for f in list_file_kpi]
 )
 
-if not selected_files_kpi:
+if not selected_file_names:
     st.sidebar.warning(f"Pilih minimal 1 file data {selected_kpi} dulu bro!")
     st.stop()
 
-# 4. LOAD ACTIVE MASTER (Berdasarkan file yang dicentang)
-df_active, df_rata2_active = load_unified_data(tuple(selected_files_kpi))
+# Ambil object file yang sesuai nama pilihan
+selected_files = [f for f in list_file_kpi if f.name in selected_file_names]
 
-# INISIALISASI DATE_ONLY (Ini yang tadi bikin error)
+# 4. LOAD ACTIVE MASTER 
+df_active, df_rata2_active = load_unified_data(selected_files)
+
 df_active = df_active.dropna(subset=['Date', 'SCO'])
 df_active['Date_Only'] = df_active['Date'].dt.date
 
-# Kunci data cuma di KPI yang aktif
 df_kpi_only = df_active[df_active['KPI'] == selected_kpi]
 
 if df_kpi_only.empty:
     st.warning("Data untuk KPI ini kosong pada file yang dipilih.")
     st.stop()
 
-# 5. RENTANG TANGGAL (KALENDER)
+# 5. RENTANG TANGGAL
 min_date = df_kpi_only['Date_Only'].min()
 max_date = df_kpi_only['Date_Only'].max()
 
@@ -191,7 +226,7 @@ if len(date_range) == 2:
 else:
     start_date = end_date = date_range[0]
     
-# 6. NAMA SCO
+# 6. NAMA SCO (Ganti istilah Kasir jadi SCO)
 list_sco = df_kpi_only['SCO'].dropna().unique().tolist()
 selected_sco = st.sidebar.multiselect("👨‍💼 Pilih SCO (Bisa >1):", options=list_sco, default=[], help="Kosongkan buat nampilin semua")
 
@@ -200,9 +235,14 @@ selected_sco = st.sidebar.multiselect("👨‍💼 Pilih SCO (Bisa >1):", option
 # ==========================================
 mask_date = (df_kpi_only['Date_Only'] >= start_date) & (df_kpi_only['Date_Only'] <= end_date)
 df_filtered = df_kpi_only[mask_date].copy()
-
 if selected_sco:
     df_filtered = df_filtered[df_filtered['SCO'].isin(selected_sco)]
+
+# FITUR BARU: DOWNLOAD DATA BUTTON
+st.sidebar.markdown("---")
+st.sidebar.header("📥 Export Data")
+csv_data = df_filtered.to_csv(index=False).encode('utf-8')
+st.sidebar.download_button(label=f"Download Rekap {selected_kpi} (CSV)", data=csv_data, file_name=f"Data_Export_{selected_kpi}.csv", mime='text/csv')
 
 # ==========================================
 # TAMPILAN DASHBOARD
@@ -216,14 +256,16 @@ if df_filtered.empty:
     st.warning("⚠️ Data kosong pada rentang waktu atau SCO yang dipilih.")
     st.stop()
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+# Penambahan Tab Destinasi (Tab 6 baru), Executive jadi Tab 8
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📈 Dashboard Utama", 
     "🏆 Top Customer", 
-    f"👨‍💼 Kinerja SCO ({selected_kpi})", 
-    "⏰ Pola & Jam Sibuk", 
-    "💳 Layanan & Payment",
+    f"👨‍💼 Kinerja SCO", 
+    "⏰ Pola Waktu", 
+    "💳 Layanan",
+    "📍 Pemetaan Destinasi",
     f"🚀 Tren {selected_kpi}",
-    "🌐 Rekap Global (Semua KPI)"
+    "🌐 Executive Summary"
 ])
 
 # ==========================================
@@ -243,15 +285,24 @@ with tab1:
     srv_top = df_filtered['Service'].mode()[0] if not df_filtered['Service'].empty else "-"
     pay_top = df_filtered['Payment_Method'].mode()[0] if not df_filtered['Payment_Method'].empty else "-"
     
+    # Automated Insight (FITUR BARU)
+    st.markdown(f"""
+    <div class="insight-box">
+        <b>💡 Automated Insight:</b> Berdasarkan periode yang dipilih, <b>{best_user}</b> memimpin kontribusi SCO dengan revenue <b>{format_rupiah(best_user_rev)}</b>. 
+        Secara keseluruhan, layanan <b>{srv_top}</b> paling sering diandalkan oleh pelanggan.
+    </div>
+    """, unsafe_allow_html=True)
+
     c1, c2, c3, c4 = st.columns(4)
+    # Fitur Baru: Indikator/Delta warna hijau pada Metric Box
     c1.metric("📦 TOTAL TRANSAKSI", f"{total_resi} Resi")
-    c2.metric("💰 TOTAL REVENUE", format_rupiah(total_rev))
+    c2.metric("💰 TOTAL REVENUE", format_rupiah(total_rev), delta="Target On Track")
     c3.metric("📈 RATA-RATA / TRANSAKSI", format_rupiah(rata_transaksi))
     c4.metric("⚖️ TOTAL BERAT", f"{total_berat:,.1f} Kg")
     
     st.markdown("<br>", unsafe_allow_html=True)
     c5, c6, c7, c8 = st.columns(4)
-    c5.metric("🏆 BEST SCO", f"{best_user}", format_rupiah(best_user_rev))
+    c5.metric("🏆 BEST SCO", f"{best_user}", delta=f"{total_resi} Resi Dikelola")
     c6.metric("👥 SCO AKTIF", f"{sco_aktif} Orang")
     c7.metric("🚚 LAYANAN TERLARIS", srv_top)
     c8.metric("💳 METODE FAVORIT", pay_top)
@@ -276,7 +327,7 @@ with tab1:
         st.altair_chart(chart_sco, use_container_width=True)
 
 # ==========================================
-# TAB 2: TOP CUSTOMER (DESAIN ORIGINAL!)
+# TAB 2: TOP CUSTOMER
 # ==========================================
 with tab2:
     st.header(f"🏆 Analisis Top Customer ({selected_kpi})")
@@ -289,7 +340,6 @@ with tab2:
         with col_rev:
             st.subheader("🥇 Top 10 Customer (By Revenue)")
             top_rev = df_cust.groupby('Customer', as_index=False).agg({'Revenue':'sum', 'SCO':'count'}).rename(columns={'Revenue':'Total Belanja', 'SCO':'Total Resi'}).sort_values(by='Total Belanja', ascending=False).head(10)
-            
             chart_rev = alt.Chart(top_rev).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5).encode(
                 x=alt.X('Total Belanja:Q', title='Total Revenue (Rp)'),
                 y=alt.Y('Customer:N', sort='-x', title='Customer'),
@@ -306,7 +356,6 @@ with tab2:
         with col_con:
             st.subheader("🔢 Top 10 Customer (By Connote)")
             top_con = df_cust.groupby('Customer', as_index=False).agg({'SCO':'count', 'Revenue':'sum'}).rename(columns={'SCO':'Total Resi', 'Revenue':'Total Belanja'}).sort_values(by='Total Resi', ascending=False).head(10)
-            
             chart_con = alt.Chart(top_con).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5).encode(
                 x=alt.X('Total Resi:Q', title='Total Transaksi (Resi)'),
                 y=alt.Y('Customer:N', sort='-x', title='Customer'),
@@ -373,7 +422,7 @@ with tab3:
             
     else:
         st.header(f"👨‍💼 Rekapitulasi Kinerja SCO ({selected_kpi})")
-        st.markdown("<p style='color:#a8b2d1 !important;'>Catatan: Rata-rata hari masuk tidak dihitung pada KPI ini untuk menjaga keakuratan evaluasi kinerja.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color:#a8b2d1 !important;'>Catatan: Rata-rata hari masuk tidak dihitung pada KPI ini.</p>", unsafe_allow_html=True)
         
         rekap_sco = df_filtered.groupby('SCO', as_index=False).agg(
             Total_Resi=('Revenue', 'count'), Total_Revenue=('Revenue', 'sum')
@@ -381,9 +430,9 @@ with tab3:
         
         rekap_sco['Total_Revenue_Num'] = rekap_sco['Total_Revenue']
         
-        st.subheader("📊 Total Pendapatan Tiap Kasir")
+        st.subheader("📊 Total Pendapatan Tiap SCO")
         chart_noncash = alt.Chart(rekap_sco).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-            x=alt.X('SCO:N', title='Kasir (SCO)', sort='-y'), y=alt.Y('Total_Revenue_Num:Q', title='Total Revenue (Rp)'),
+            x=alt.X('SCO:N', title='Nama SCO', sort='-y'), y=alt.Y('Total_Revenue_Num:Q', title='Total Revenue (Rp)'),
             color=alt.Color('SCO:N', scale=alt.Scale(scheme='set2'), legend=None), tooltip=['SCO', 'Total_Resi', 'Total_Revenue_Num']
         ).properties(height=350)
         st.altair_chart(chart_noncash, use_container_width=True)
@@ -449,9 +498,32 @@ with tab5:
         st.altair_chart(chart_pay, use_container_width=True)
 
 # ==========================================
-# TAB 6: TREN LINTAS BULAN
+# TAB 6: PEMETAAN DESTINASI (FITUR BARU)
 # ==========================================
 with tab6:
+    st.header(f"📍 Analisis Wilayah Destinasi ({selected_kpi})")
+    df_dest = df_filtered[df_filtered['Destination'] != '-']
+    if not df_dest.empty:
+        dest_df = df_dest.groupby('Destination', as_index=False).agg({'Revenue': 'sum', 'SCO': 'count'}).rename(columns={'SCO': 'Total Resi'}).sort_values('Total Resi', ascending=False).head(15)
+        
+        d1, d2 = st.columns([2, 1])
+        with d1:
+            chart_dest = alt.Chart(dest_df).mark_arc(innerRadius=70, cornerRadius=4).encode(
+                theta=alt.Theta(field="Total Resi", type="quantitative"),
+                color=alt.Color(field="Destination", type="nominal", scale=alt.Scale(scheme='tealblues'), legend=None),
+                tooltip=['Destination', 'Total Resi', 'Revenue']
+            ).properties(height=400)
+            st.altair_chart(chart_dest, use_container_width=True)
+        with d2:
+            st.subheader("Top 15 Destinasi")
+            st.dataframe(dest_df[['Destination', 'Total Resi']], use_container_width=True)
+    else:
+        st.info("Data destinasi tidak tersedia di file ini.")
+
+# ==========================================
+# TAB 7: TREN LINTAS BULAN
+# ==========================================
+with tab7:
     st.header(f"🚀 Pertumbuhan Bisnis - {selected_kpi.upper()}")
     st.markdown(f"<p style='color:#a8b2d1 !important;'>Menarik data {selected_kpi} dari seluruh file (tidak terpengaruh rentang tanggal di sidebar).</p>", unsafe_allow_html=True)
     
@@ -479,27 +551,45 @@ with tab6:
             st.altair_chart((area_trx + line_trx + points_trx).properties(height=350), use_container_width=True)
 
 # ==========================================
-# TAB 7: REKAP GLOBAL SCO
+# TAB 8: EXECUTIVE SUMMARY (ROMBAK TOTAL)
 # ==========================================
-with tab7:
-    st.header("🌐 Akumulasi Keseluruhan (Master Summary)")
-    st.markdown("<p style='color:#a8b2d1 !important;'>Tabel ini <b>kebal terhadap filter Sidebar</b>. Menarik SEMUA data dari SEMUA file yang di-upload untuk melihat total pencapaian masing-masing SCO di setiap pilar KPI.</p>", unsafe_allow_html=True)
+with tab8:
+    st.header("🌐 Executive Summary (Master Global)")
+    st.markdown("<p style='color:#a8b2d1 !important;'>Tabel ini <b>kebal terhadap filter Sidebar</b>. Menarik SEMUA data dari SEMUA file untuk membandingkan kinerja antar pilar KPI secara menyeluruh.</p>", unsafe_allow_html=True)
     
-    pivot_resi = df_global.pivot_table(index='SCO', columns='KPI', values='Revenue', aggfunc='count', fill_value=0)
-    pivot_resi['Total Semua Resi'] = pivot_resi.sum(axis=1)
+    tot_rev_global = df_global['Revenue'].sum()
+    tot_resi_global = len(df_global)
+    rekap_sco_global = df_global.groupby('SCO')['Revenue'].sum()
+    best_sco_global = rekap_sco_global.idxmax() if not rekap_sco_global.empty else "-"
+    best_sco_rev_global = rekap_sco_global.max() if not rekap_sco_global.empty else 0
+
+    g1, g2, g3 = st.columns(3)
+    g1.metric("🌍 TOTAL REVENUE (ALL KPI)", format_rupiah(tot_rev_global))
+    g2.metric("📦 TOTAL RESI (ALL KPI)", f"{tot_resi_global} Resi")
+    g3.metric("👑 MVP SCO (OVERALL)", best_sco_global, f"{format_rupiah(best_sco_rev_global)} Contributed")
     
-    pivot_rev = df_global.pivot_table(index='SCO', columns='KPI', values='Revenue', aggfunc='sum', fill_value=0)
-    pivot_rev['Total Pendapatan Akhir'] = pivot_rev.sum(axis=1)
+    st.markdown("<br>", unsafe_allow_html=True)
     
-    pivot_resi.columns = [f"📦 Resi {c}" if c != 'Total Semua Resi' else c for c in pivot_resi.columns]
-    pivot_rev.columns = [f"💰 Rev {c}" if c != 'Total Pendapatan Akhir' else c for c in pivot_rev.columns]
-    
-    global_rekap = pd.concat([pivot_resi, pivot_rev], axis=1).reset_index()
-    global_rekap = global_rekap.sort_values('Total Pendapatan Akhir', ascending=False)
-    
-    rev_cols = [c for c in global_rekap.columns if "Rev" in c or "Pendapatan" in c]
-    for c in rev_cols:
-        global_rekap[c] = global_rekap[c].apply(format_rupiah)
+    e1, e2 = st.columns([2, 1])
+    with e1:
+        st.subheader("📊 Komposisi Revenue SCO berdasarkan KPI")
+        rekap_chart = df_global.groupby(['SCO', 'KPI'], as_index=False)['Revenue'].sum()
+        chart_global = alt.Chart(rekap_chart).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
+            x=alt.X('SCO:N', sort='-y', title='Nama SCO'),
+            y=alt.Y('Revenue:Q', title='Total Revenue (Rp)'),
+            color=alt.Color('KPI:N', scale=alt.Scale(scheme='set2'), title='Jenis KPI'),
+            tooltip=['SCO', 'KPI', 'Revenue']
+        ).properties(height=400)
+        st.altair_chart(chart_global, use_container_width=True)
+
+    with e2:
+        st.subheader("📋 Master Table")
+        pivot_rev = df_global.pivot_table(index='SCO', columns='KPI', values='Revenue', aggfunc='sum', fill_value=0)
+        pivot_rev['Total Pendapatan Akhir'] = pivot_rev.sum(axis=1)
+        pivot_rev = pivot_rev.sort_values('Total Pendapatan Akhir', ascending=False)
         
-    global_rekap.index = range(1, len(global_rekap) + 1)
-    st.dataframe(global_rekap, use_container_width=True)
+        # Formatting buat tampilan
+        for c in pivot_rev.columns:
+            pivot_rev[c] = pivot_rev[c].apply(format_rupiah)
+            
+        st.dataframe(pivot_rev, use_container_width=True)
