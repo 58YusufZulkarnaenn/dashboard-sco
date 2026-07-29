@@ -9,6 +9,23 @@ import os
 # ==========================================
 st.set_page_config(page_title="Dashboard SCO", page_icon="📦", layout="wide")
 
+# ------------------------------------------
+# PALET WARNA BRAND (dipakai konsisten di semua chart)
+# ------------------------------------------
+BRAND_TEAL = "#64ffda"
+BRAND_TEAL_DARK = "#0f9b8e"
+BRAND_GOLD = "#ffd166"
+BRAND_CYAN = "#00b4d8"
+BRAND_WHITE = "#ffffff"
+
+# Palet kategorikal (dipakai utk chart per-SCO, per-layanan, dll)
+BRAND_CATEGORICAL = [BRAND_TEAL, BRAND_GOLD, BRAND_CYAN, "#0096c7", "#48cae4", "#ffe066", "#80ffdb", "#ade8f4"]
+
+# Palet sequential/gradient (dipakai utk chart yang di-rank by value, ex: Top Customer)
+BRAND_SEQUENTIAL = ["#0f9b8e", "#14b8a6", "#2dd4bf", "#5eead4", "#99f6e4", "#64ffda"]
+BRAND_SEQUENTIAL_GOLD = ["#7a5c00", "#b8860b", "#daa520", "#e8b923", "#ffd166", "#ffe699"]
+
+
 def add_custom_css():
     st.markdown("""
     <style>
@@ -73,6 +90,72 @@ def add_custom_css():
         font-size: 1.1rem;
         color: #e6f1ff;
         box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        transition: box-shadow 0.3s ease;
+    }
+    .insight-box:hover {
+        box-shadow: 0 4px 20px rgba(100, 255, 218, 0.25);
+    }
+    .insight-box.insight-warning {
+        background: linear-gradient(90deg, rgba(255, 209, 102, 0.15) 0%, rgba(255, 209, 102, 0.0) 100%);
+        border-left: 5px solid #ffd166;
+    }
+
+    /* ============ POLISH: Chart container hover glow ============ */
+    [data-testid="stVegaLiteChart"], [data-testid="stArrowVegaLiteChart"] {
+        border-radius: 15px;
+        padding: 10px;
+        transition: box-shadow 0.35s ease, transform 0.25s ease, background 0.35s ease;
+        border: 1px solid transparent;
+    }
+    [data-testid="stVegaLiteChart"]:hover, [data-testid="stArrowVegaLiteChart"]:hover {
+        box-shadow: 0 8px 30px rgba(100, 255, 218, 0.15);
+        border: 1px solid rgba(100, 255, 218, 0.25);
+        background: rgba(255, 255, 255, 0.02);
+    }
+    
+    /* pydeck map container glow */
+    [data-testid="stDeckGlJsonChart"] {
+        border-radius: 15px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        transition: box-shadow 0.35s ease, border 0.35s ease;
+    }
+    [data-testid="stDeckGlJsonChart"]:hover {
+        box-shadow: 0 12px 40px rgba(100, 255, 218, 0.2);
+        border: 1px solid rgba(100, 255, 218, 0.3);
+    }
+
+    /* ============ POLISH: Dataframe/table rounded corners ============ */
+    [data-testid="stDataFrame"] {
+        border-radius: 15px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.25);
+        transition: box-shadow 0.3s ease, border 0.3s ease;
+    }
+    [data-testid="stDataFrame"]:hover {
+        box-shadow: 0 10px 36px rgba(100, 255, 218, 0.15);
+        border: 1px solid rgba(100, 255, 218, 0.25);
+    }
+
+    /* ============ FOOTER ============ */
+    .app-footer {
+        text-align: center;
+        color: #a8b2d1;
+        padding: 28px 0 10px 0;
+        font-size: 0.85rem;
+        opacity: 0.8;
+        border-top: 1px solid rgba(255,255,255,0.08);
+        margin-top: 30px;
+    }
+    .app-footer b { color: #64ffda; }
+
+    /* ============ st.toast styling nudge ============ */
+    [data-testid="stToast"] {
+        background: rgba(15, 32, 39, 0.95) !important;
+        border: 1px solid rgba(100, 255, 218, 0.3) !important;
+        border-radius: 12px !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -98,7 +181,12 @@ def altair_dark_theme():
                 "labelColor": "#a8b2d1",
                 "titleColor": "#a8b2d1"
             },
-            "title": {"color": "#ffffff"}
+            "title": {"color": "#ffffff"},
+            "range": {
+                "category": BRAND_CATEGORICAL,
+                "heatmap": BRAND_SEQUENTIAL,
+                "ramp": BRAND_SEQUENTIAL
+            }
         }
     }
 alt.themes.register("dark_custom", altair_dark_theme)
@@ -204,6 +292,17 @@ def load_unified_data(file_list):
 
 def format_rupiah(val):
     return f"Rp {val:,.0f}".replace(",", ".")
+
+# ------------------------------------------
+# POLISH: helper buat highlight baris juara (rank 1) di tabel ranking
+# ------------------------------------------
+def style_top_row(df):
+    """Kasih highlight emas tipis di baris pertama (baris juara) sebuah tabel ranking."""
+    def _highlight(row):
+        if row.name == df.index[0]:
+            return ['background-color: rgba(255, 209, 102, 0.18); font-weight: 700;'] * len(row)
+        return [''] * len(row)
+    return df.style.apply(_highlight, axis=1)
 
 # ==========================================
 # SIDEBAR KIRI: SISTEM HYBRID & GAMBAR
@@ -311,7 +410,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "🏆 Top Customer", 
     f"👨‍💼 Kinerja SCO", 
     "⏰ Pola Waktu", 
-    "💳 Service & Payment methode",
+    "💳 Metode Pembayaran & Layanan",
     "📍 Pemetaan Destinasi",
     f"🚀 Tren {selected_kpi}",
     "🌐 Executive Summary"
@@ -334,9 +433,18 @@ with tab1:
     srv_top = df_filtered['Service'].mode()[0] if not df_filtered['Service'].empty else "-"
     pay_top = df_filtered['Payment_Method'].mode()[0] if not df_filtered['Payment_Method'].empty else "-"
     
+    # POLISH: insight box beda ikon/warna tergantung seberapa dominan kontribusi Best SCO
+    share_best = (best_user_rev / total_rev * 100) if total_rev > 0 else 0
+    if share_best >= 40:
+        insight_icon = "🔥"
+        insight_class = "insight-box"
+    else:
+        insight_icon = "💡"
+        insight_class = "insight-box"
+
     st.markdown(f"""
-    <div class="insight-box">
-        <b>💡 Automated Insight:</b> Berdasarkan periode yang dipilih, <b>{best_user}</b> memimpin kontribusi SCO dengan revenue <b>{format_rupiah(best_user_rev)}</b>. 
+    <div class="{insight_class}">
+        <b>{insight_icon} Automated Insight:</b> Berdasarkan periode yang dipilih, <b>{best_user}</b> memimpin kontribusi SCO dengan revenue <b>{format_rupiah(best_user_rev)}</b>. 
         Secara keseluruhan, layanan <b>{srv_top}</b> paling sering diandalkan oleh pelanggan.
     </div>
     """, unsafe_allow_html=True)
@@ -359,7 +467,7 @@ with tab1:
     with kiri:
         st.subheader(f"📈 Tren Harian ({selected_kpi})")
         harian = df_filtered.groupby('Date_Only', as_index=False).size().rename(columns={'size':'Transaksi'})
-        chart_tren = alt.Chart(harian).mark_line(point=True, color='#64ffda', strokeWidth=3).encode(
+        chart_tren = alt.Chart(harian).mark_line(point=True, color=BRAND_TEAL, strokeWidth=3).encode(
             x=alt.X('Date_Only:T', title='Tanggal'), y=alt.Y('Transaksi:Q', title='Jumlah Resi'), tooltip=['Date_Only', 'Transaksi']
         ).properties(height=300)
         st.altair_chart(chart_tren, use_container_width=True)
@@ -369,7 +477,7 @@ with tab1:
         rekap_user_df = df_filtered.groupby('SCO', as_index=False).agg({'Revenue':'sum'}).rename(columns={'Revenue':'Pendapatan'}).sort_values(by='Pendapatan', ascending=False)
         chart_sco = alt.Chart(rekap_user_df).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
             x=alt.X('SCO:N', sort='-y', title='Nama SCO'), y=alt.Y('Pendapatan:Q', title='Total Revenue (Rp)'),
-            color=alt.Color('SCO:N', scale=alt.Scale(scheme='teals'), legend=None), tooltip=['SCO', 'Pendapatan']
+            color=alt.Color('SCO:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None), tooltip=['SCO', 'Pendapatan']
         ).properties(height=300)
         st.altair_chart(chart_sco, use_container_width=True)
         
@@ -381,17 +489,17 @@ with tab1:
         rata_harian['Rata-Rata'] = rata_harian['Total_Rev'] / rata_harian['Total_Resi']
         chart_avg = alt.Chart(rata_harian).mark_area(
             opacity=0.3,
-            color=alt.Gradient(gradient='linear', stops=[alt.GradientStop(color='#64ffda', offset=0), alt.GradientStop(color='rgba(0,0,0,0)', offset=1)], x1=1, x2=1, y1=1, y2=0)
+            color=alt.Gradient(gradient='linear', stops=[alt.GradientStop(color=BRAND_TEAL, offset=0), alt.GradientStop(color='rgba(0,0,0,0)', offset=1)], x1=1, x2=1, y1=1, y2=0)
         ).encode(
             x=alt.X('Date_Only:T', title='Tanggal'), y=alt.Y('Rata-Rata:Q', title='Rata-Rata Revenue (Rp)'), tooltip=['Date_Only', 'Rata-Rata']
         )
-        line_avg = alt.Chart(rata_harian).mark_line(color='#64ffda', strokeWidth=3).encode(x='Date_Only:T', y='Rata-Rata:Q')
+        line_avg = alt.Chart(rata_harian).mark_line(color=BRAND_TEAL, strokeWidth=3).encode(x='Date_Only:T', y='Rata-Rata:Q')
         st.altair_chart((chart_avg + line_avg).properties(height=300), use_container_width=True)
 
     with bawah2:
         st.subheader("📦 Top 5 Destinasi Pengiriman")
         dest_df_quick = df_filtered[df_filtered['Destination'] != '-'].groupby('Destination', as_index=False).size().rename(columns={'size':'Total Resi'}).sort_values('Total Resi', ascending=False).head(5)
-        chart_dest_quick = alt.Chart(dest_df_quick).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5, color='#00b4d8').encode(
+        chart_dest_quick = alt.Chart(dest_df_quick).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5, color=BRAND_CYAN).encode(
             x=alt.X('Total Resi:Q', title='Jumlah Transaksi'),
             y=alt.Y('Destination:N', sort='-x', title='Daerah Tujuan'),
             tooltip=['Destination', 'Total Resi']
@@ -413,28 +521,30 @@ with tab2:
             top_rev = df_cust.groupby('Customer', as_index=False).agg({'Revenue':'sum', 'SCO':'count'}).rename(columns={'Revenue':'Total Belanja', 'SCO':'Total Resi'}).sort_values(by='Total Belanja', ascending=False).head(10)
             chart_rev = alt.Chart(top_rev).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5).encode(
                 x=alt.X('Total Belanja:Q', title='Total Revenue (Rp)'), y=alt.Y('Customer:N', sort='-x', title='Customer'),
-                color=alt.Color('Total Belanja:Q', scale=alt.Scale(scheme='blues'), legend=None), tooltip=['Customer', 'Total Belanja', 'Total Resi']
+                color=alt.Color('Total Belanja:Q', scale=alt.Scale(range=BRAND_SEQUENTIAL), legend=None), tooltip=['Customer', 'Total Belanja', 'Total Resi']
             ).properties(height=400)
             st.altair_chart(chart_rev, use_container_width=True)
             
             top_rev_tabel = top_rev.copy()
             top_rev_tabel['Total Belanja'] = top_rev_tabel['Total Belanja'].apply(format_rupiah)
             top_rev_tabel.index = range(1, len(top_rev_tabel) + 1)
-            st.dataframe(top_rev_tabel, use_container_width=True)
+            # POLISH: highlight baris juara (rank 1)
+            st.dataframe(style_top_row(top_rev_tabel), use_container_width=True)
 
         with col_con:
             st.subheader("🔢 Top 10 Customer (By Connote)")
             top_con = df_cust.groupby('Customer', as_index=False).agg({'SCO':'count', 'Revenue':'sum'}).rename(columns={'SCO':'Total Resi', 'Revenue':'Total Belanja'}).sort_values(by='Total Resi', ascending=False).head(10)
             chart_con = alt.Chart(top_con).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5).encode(
                 x=alt.X('Total Resi:Q', title='Total Transaksi (Resi)'), y=alt.Y('Customer:N', sort='-x', title='Customer'),
-                color=alt.Color('Total Resi:Q', scale=alt.Scale(scheme='oranges'), legend=None), tooltip=['Customer', 'Total Resi', 'Total Belanja']
+                color=alt.Color('Total Resi:Q', scale=alt.Scale(range=BRAND_SEQUENTIAL_GOLD), legend=None), tooltip=['Customer', 'Total Resi', 'Total Belanja']
             ).properties(height=400)
             st.altair_chart(chart_con, use_container_width=True)
             
             top_con_tabel = top_con.copy()
             top_con_tabel['Total Belanja'] = top_con_tabel['Total Belanja'].apply(format_rupiah)
             top_con_tabel.index = range(1, len(top_con_tabel) + 1)
-            st.dataframe(top_con_tabel, use_container_width=True)
+            # POLISH: highlight baris juara (rank 1)
+            st.dataframe(style_top_row(top_con_tabel), use_container_width=True)
 
 # ==========================================
 # TAB 3: KINERJA SCO
@@ -467,14 +577,18 @@ with tab3:
             
             if 'Rata_Pendapatan_Per_Hari_Num' in df_r_clean.columns:
                 st.subheader("📊 Rata-Rata Pendapatan Harian")
-                chart_abs = alt.Chart(df_r_clean).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
+                df_r_sorted = df_r_clean.sort_values('Rata_Pendapatan_Per_Hari_Num', ascending=False)
+                chart_abs = alt.Chart(df_r_sorted).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
                     x=alt.X('User id:N', title='SCO', sort='-y'), y=alt.Y('Rata_Pendapatan_Per_Hari_Num:Q', title='Rata-Rata Pendapatan (Rp)'),
-                    color=alt.Color('User id:N', scale=alt.Scale(scheme='set2'), legend=None), tooltip=['User id', 'Hari_Masuk', 'Rata_Pendapatan_Per_Hari']
+                    color=alt.Color('User id:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None), tooltip=['User id', 'Hari_Masuk', 'Rata_Pendapatan_Per_Hari']
                 ).properties(height=350)
                 st.altair_chart(chart_abs, use_container_width=True)
             st.subheader("📋 Tabel Detail Kinerja (CASH)")
             cols = [c for c in df_r_clean.columns if not c.endswith('_Num')]
-            st.dataframe(df_r_clean[cols], use_container_width=True)
+            df_r_display = df_r_clean[cols].copy()
+            df_r_display.index = range(1, len(df_r_display) + 1)
+            # POLISH: highlight baris juara (rank 1) berdasar urutan tabel apa adanya
+            st.dataframe(style_top_row(df_r_display), use_container_width=True)
     else:
         st.header(f"👨‍💼 Rekapitulasi Kinerja SCO ({selected_kpi})")
         rekap_sco = df_filtered.groupby('SCO', as_index=False).agg(Total_Resi=('Revenue', 'count'), Total_Revenue=('Revenue', 'sum')).sort_values('Total_Revenue', ascending=False)
@@ -482,7 +596,7 @@ with tab3:
         st.subheader("📊 Total Pendapatan Tiap SCO")
         chart_noncash = alt.Chart(rekap_sco).mark_bar(size=50, cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
             x=alt.X('SCO:N', title='Nama SCO', sort='-y'), y=alt.Y('Total_Revenue_Num:Q', title='Total Revenue (Rp)'),
-            color=alt.Color('SCO:N', scale=alt.Scale(scheme='set2'), legend=None), tooltip=['SCO', 'Total_Resi', 'Total_Revenue_Num']
+            color=alt.Color('SCO:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None), tooltip=['SCO', 'Total_Resi', 'Total_Revenue_Num']
         ).properties(height=350)
         st.altair_chart(chart_noncash, use_container_width=True)
         tabel_sco = rekap_sco.copy()
@@ -490,7 +604,8 @@ with tab3:
         tabel_sco = tabel_sco.drop(columns=['Total_Revenue_Num'])
         tabel_sco.index = range(1, len(tabel_sco) + 1)
         st.subheader(f"📋 Tabel Detail Kinerja ({selected_kpi})")
-        st.dataframe(tabel_sco, use_container_width=True)
+        # POLISH: highlight baris juara (rank 1)
+        st.dataframe(style_top_row(tabel_sco), use_container_width=True)
 
 # ==========================================
 # TAB 4: POLA HARI & JAM SIBUK
@@ -505,7 +620,7 @@ with tab4:
         pola_df = df_filtered.groupby('Hari', as_index=False).size().rename(columns={'size':'Total Transaksi'})
         chart_pola = alt.Chart(pola_df).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
             x=alt.X('Hari:N', sort=hari_order), y=alt.Y('Total Transaksi:Q'),
-            color=alt.condition(alt.datum['Total Transaksi'] == pola_df['Total Transaksi'].max(), alt.value('#ff4b4b'), alt.value('#64ffda')),
+            color=alt.condition(alt.datum['Total Transaksi'] == pola_df['Total Transaksi'].max(), alt.value(BRAND_GOLD), alt.value(BRAND_TEAL)),
             tooltip=['Hari', 'Total Transaksi']
         ).properties(height=350)
         st.altair_chart(chart_pola, use_container_width=True)
@@ -515,7 +630,7 @@ with tab4:
         jam_df['Jam_Label'] = jam_df['Jam'].apply(lambda x: f"{x:02d}:00")
         chart_jam = alt.Chart(jam_df).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
             x=alt.X('Jam_Label:N', sort=jam_df['Jam_Label'].tolist(), title='Jam'), y=alt.Y('Total Transaksi:Q'),
-            color=alt.condition(alt.datum['Total Transaksi'] == jam_df['Total Transaksi'].max(), alt.value('#f5a623'), alt.value('#64ffda')),
+            color=alt.condition(alt.datum['Total Transaksi'] == jam_df['Total Transaksi'].max(), alt.value(BRAND_GOLD), alt.value(BRAND_TEAL)),
             tooltip=['Jam_Label', 'Total Transaksi']
         ).properties(height=350)
         st.altair_chart(chart_jam, use_container_width=True)
@@ -524,21 +639,23 @@ with tab4:
 # TAB 5: LAYANAN & PAYMENT
 # ==========================================
 with tab5:
-    st.header(f"💳 Distribusi Layanan ({selected_kpi})")
+    st.header(f"💳 Distribusi Layanan & Metode Pembayaran ({selected_kpi})")
     s1, s2 = st.columns(2)
     with s1:
+        st.subheader("🚚 Jenis Layanan")
         top_serv = df_filtered['Service'].value_counts().reset_index().rename(columns={'Service':'Jenis Layanan', 'count':'Total Dipakai'})
         chart_serv = alt.Chart(top_serv).mark_arc(innerRadius=60).encode(
             theta=alt.Theta(field="Total Dipakai", type="quantitative"),
-            color=alt.Color(field="Jenis Layanan", type="nominal", scale=alt.Scale(scheme='category20b')),
+            color=alt.Color(field="Jenis Layanan", type="nominal", scale=alt.Scale(range=BRAND_CATEGORICAL)),
             tooltip=['Jenis Layanan', 'Total Dipakai']
         ).properties(height=300)
         st.altair_chart(chart_serv, use_container_width=True)
     with s2:
+        st.subheader("💳 Metode Pembayaran")
         top_pay = df_filtered['Payment_Method'].value_counts().reset_index().rename(columns={'Payment_Method':'Metode', 'count':'Total Transaksi'})
         chart_pay = alt.Chart(top_pay).mark_bar(cornerRadiusTopRight=5, cornerRadiusBottomRight=5).encode(
             y=alt.Y('Metode:N', sort='-x', title='Tipe / Marketplace'), x=alt.X('Total Transaksi:Q', title='Penggunaan'),
-            color=alt.Color('Metode:N', scale=alt.Scale(scheme='set1'), legend=None), tooltip=['Metode', 'Total Transaksi']
+            color=alt.Color('Metode:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None), tooltip=['Metode', 'Total Transaksi']
         ).properties(height=300)
         st.altair_chart(chart_pay, use_container_width=True)
 
@@ -579,20 +696,24 @@ with tab6:
         
         if not map_df.empty:
             st.subheader("🗺️ Peta 3D Persebaran Logistik")
-            st.markdown("<p style='color:#a8b2d1; font-size:0.9rem;'>Warna merah muda dan tinggi pilar menandakan tingginya jumlah resi. (Bisa di-zoom, geser, klik kanan tahan untuk memutar 3D)</p>", unsafe_allow_html=True)
+            st.markdown("<p style='color:#a8b2d1; font-size:0.9rem;'>Warna teal ke emas dan tinggi pilar menandakan tingginya jumlah resi. (Bisa di-zoom, geser, klik kanan tahan untuk memutar 3D)</p>", unsafe_allow_html=True)
             
             max_resi = map_df['Total Resi'].max()
             min_resi = map_df['Total Resi'].min()
             
+            # POLISH: gradient warna diselaraskan ke tema brand (teal gelap -> teal terang -> emas)
+            # dari rgb(15,155,142) [BRAND_TEAL_DARK] ke rgb(255,209,102) [BRAND_GOLD]
             def get_color(resi):
                 if max_resi == min_resi:
                     norm = 0.5
                 else:
                     norm = (resi - min_resi) / (max_resi - min_resi)
-                r = int(100 + (155 * norm))
-                g = int(255 - (205 * norm))
-                b = int(218 - (118 * norm))
-                return [r, g, b, 220] 
+                start = (15, 155, 142)   # BRAND_TEAL_DARK
+                end = (255, 209, 102)    # BRAND_GOLD
+                r = int(start[0] + (end[0] - start[0]) * norm)
+                g = int(start[1] + (end[1] - start[1]) * norm)
+                b = int(start[2] + (end[2] - start[2]) * norm)
+                return [r, g, b, 220]
                 
             map_df['color'] = map_df['Total Resi'].apply(get_color)
             
@@ -611,9 +732,21 @@ with tab6:
             
             view_state = pdk.ViewState(latitude=-6.2, longitude=110.0, zoom=5, pitch=50, bearing=15)
             
+            # POLISH: tooltip pydeck dikustom jadi dark + aksen teal biar nyatu sama tema
             r = pdk.Deck(
                 layers=[layer], initial_view_state=view_state,
-                tooltip={"text": "📍 {Destination}\n📦 Resi: {Total Resi}\n💰 Rev: Rp {Revenue}"},
+                tooltip={
+                    "html": "<b style='color:#64ffda;'>📍 {Destination}</b><br/>📦 Resi: {Total Resi}<br/>💰 Rev: Rp {Revenue}",
+                    "style": {
+                        "backgroundColor": "rgba(15, 32, 39, 0.95)",
+                        "color": "#e6f1ff",
+                        "border": "1px solid rgba(100, 255, 218, 0.4)",
+                        "borderRadius": "10px",
+                        "padding": "10px 14px",
+                        "fontFamily": "'Plus Jakarta Sans', sans-serif",
+                        "fontSize": "0.85rem"
+                    }
+                },
                 map_style='dark'
             )
             st.pydeck_chart(r)
@@ -628,13 +761,14 @@ with tab6:
         with d1:
             chart_dest = alt.Chart(top15_df).mark_arc(innerRadius=70, cornerRadius=4).encode(
                 theta=alt.Theta(field="Total Resi", type="quantitative"),
-                color=alt.Color(field="Destination", type="nominal", scale=alt.Scale(scheme='tealblues'), legend=None),
+                color=alt.Color(field="Destination", type="nominal", scale=alt.Scale(range=BRAND_SEQUENTIAL + BRAND_CATEGORICAL), legend=None),
                 tooltip=['Destination', 'Total Resi', 'Revenue']
             ).properties(height=400)
             st.altair_chart(chart_dest, use_container_width=True)
         with d2:
             top15_df.index = range(1, len(top15_df) + 1) 
-            st.dataframe(top15_df[['Destination', 'Total Resi']], use_container_width=True)
+            # POLISH: highlight baris juara (rank 1)
+            st.dataframe(style_top_row(top15_df[['Destination', 'Total Resi']]), use_container_width=True)
     else:
         st.info("Data destinasi tidak tersedia di file ini.")
 
@@ -656,16 +790,16 @@ with tab7:
         b1, b2 = st.columns(2)
         with b1:
             base_rev = alt.Chart(tren_bulan).encode(x=alt.X('Periode:N', sort=sort_order, title='Bulan', axis=alt.Axis(labelAngle=0, grid=False)))
-            area_rev = base_rev.mark_area(opacity=0.2, color='#00b4d8', interpolate='monotone').encode(y=alt.Y('Total Revenue:Q', title='Pendapatan (Rp)'))
-            line_rev = base_rev.mark_line(color='#00d4ff', strokeWidth=4, interpolate='monotone').encode(y='Total Revenue:Q')
-            points_rev = base_rev.mark_circle(color='#ffffff', size=120, opacity=1).encode(y='Total Revenue:Q', tooltip=['Periode', 'Total Revenue'])
+            area_rev = base_rev.mark_area(opacity=0.2, color=BRAND_CYAN, interpolate='monotone').encode(y=alt.Y('Total Revenue:Q', title='Pendapatan (Rp)'))
+            line_rev = base_rev.mark_line(color=BRAND_CYAN, strokeWidth=4, interpolate='monotone').encode(y='Total Revenue:Q')
+            points_rev = base_rev.mark_circle(color=BRAND_WHITE, size=120, opacity=1).encode(y='Total Revenue:Q', tooltip=['Periode', 'Total Revenue'])
             st.altair_chart((area_rev + line_rev + points_rev).properties(height=350), use_container_width=True)
             
         with b2:
             base_trx = alt.Chart(tren_bulan).encode(x=alt.X('Periode:N', sort=sort_order, title='Bulan', axis=alt.Axis(labelAngle=0, grid=False)))
-            area_trx = base_trx.mark_area(opacity=0.2, color='#ffb703', interpolate='monotone').encode(y=alt.Y('Total Transaksi:Q', title='Jumlah Resi'))
-            line_trx = base_trx.mark_line(color='#ffea00', strokeWidth=4, interpolate='monotone').encode(y='Total Transaksi:Q')
-            points_trx = base_trx.mark_circle(color='#ffffff', size=120, opacity=1).encode(y='Total Transaksi:Q', tooltip=['Periode', 'Total Transaksi'])
+            area_trx = base_trx.mark_area(opacity=0.2, color=BRAND_GOLD, interpolate='monotone').encode(y=alt.Y('Total Transaksi:Q', title='Jumlah Resi'))
+            line_trx = base_trx.mark_line(color=BRAND_GOLD, strokeWidth=4, interpolate='monotone').encode(y='Total Transaksi:Q')
+            points_trx = base_trx.mark_circle(color=BRAND_WHITE, size=120, opacity=1).encode(y='Total Transaksi:Q', tooltip=['Periode', 'Total Transaksi'])
             st.altair_chart((area_trx + line_trx + points_trx).properties(height=350), use_container_width=True)
             
         st.markdown("---")
@@ -700,7 +834,7 @@ with tab8:
     chart_global = alt.Chart(rekap_chart).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
         x=alt.X('SCO:N', sort='-y', title='Nama SCO'),
         y=alt.Y('Revenue:Q', title='Total Revenue (Rp)'),
-        color=alt.Color('KPI:N', scale=alt.Scale(scheme='set2'), title='Jenis KPI'),
+        color=alt.Color('KPI:N', scale=alt.Scale(range=BRAND_CATEGORICAL), title='Jenis KPI'),
         tooltip=['SCO', 'KPI', 'Revenue']
     ).properties(height=450)
     st.altair_chart(chart_global, use_container_width=True)
@@ -726,4 +860,15 @@ with tab8:
         global_rekap[c] = global_rekap[c].apply(format_rupiah)
         
     global_rekap.index = range(1, len(global_rekap) + 1)
-    st.dataframe(global_rekap, use_container_width=True)
+    # POLISH: highlight baris juara (rank 1) — sudah ke-sort by Total Pendapatan Akhir
+    st.dataframe(style_top_row(global_rekap), use_container_width=True)
+
+# ==========================================
+# FOOTER
+# ==========================================
+st.markdown("""
+<div class="app-footer">
+    📦 <b>Dashboard Enterprise KP Grand Taruma</b> · Dibangun untuk monitoring performa SCO Cash &amp; Cashless<br/>
+    Dibuat dengan ❤️ oleh <b>Yusuf Zulkarnaen</b>
+</div>
+""", unsafe_allow_html=True)
