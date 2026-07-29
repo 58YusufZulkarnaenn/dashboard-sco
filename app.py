@@ -146,7 +146,7 @@ try:
             st.dataframe(top_con_tabel, use_container_width=True)
 
     # ==========================================
-    # TAB 3: KINERJA & ABSENSI (Ubah Format Keuangan)
+    # TAB 3: KINERJA SCO (Ubah Format Keuangan)
     # ==========================================
     with tab3:
         st.header("👨‍💼 Rata-Rata Hari Masuk & Produktivitas SCO")
