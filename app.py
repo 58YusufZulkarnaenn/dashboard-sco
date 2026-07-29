@@ -4,9 +4,6 @@ import altair as alt
 import glob
 import os
 import requests
-
-# INI LIBRARY UNTUK KOSMETIK & MESIN PINTAR
-from geopy.geocoders import Nominatim
 from streamlit_lottie import st_lottie
 
 # ==========================================
@@ -64,7 +61,6 @@ def add_custom_css():
     }
     [data-testid="stMetricLabel"] { color: #a8b2d1 !important; font-weight: 600; font-size: 1.1rem; }
     [data-testid="stMetricValue"] { color: #64ffda !important; font-weight: 800; }
-    [data-testid="stMetricDelta"] svg { fill: #00e676; }
     
     .stTabs [data-baseweb="tab-list"] {
         gap: 10px; background-color: rgba(255, 255, 255, 0.05);
@@ -89,7 +85,6 @@ def add_custom_css():
         margin-bottom: 25px;
         font-size: 1.1rem;
         color: #e6f1ff;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
     }
 
     [data-testid="stVegaLiteChart"], [data-testid="stArrowVegaLiteChart"] {
@@ -128,12 +123,6 @@ def add_custom_css():
         margin-top: 30px;
     }
     .app-footer b { color: #64ffda; }
-
-    [data-testid="stToast"] {
-        background: rgba(15, 32, 39, 0.95) !important;
-        border: 1px solid rgba(100, 255, 218, 0.3) !important;
-        border-radius: 12px !important;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -278,7 +267,7 @@ def format_rupiah(val):
     return f"Rp {val:,.0f}".replace(",", ".")
 
 # ==========================================
-# MESIN GEOCODING (OTOMATIS)
+# KAMUS KOORDINAT KOTA LENGKAP & CEPAT
 # ==========================================
 CITY_COORDS = {
     'JAKARTA': [-6.2088, 106.8456], 'BEKASI': [-6.2383, 106.9756], 
@@ -297,21 +286,15 @@ CITY_COORDS = {
     'PADANG': [-0.9471, 100.3690], 'BANJARMASIN': [-3.3167, 114.5901],
     'BALIKPAPAN': [-1.2379, 116.8529], 'PONTIANAK': [-0.0227, 109.3333],
     'PENJARINGAN': [-6.1283, 106.7865], 'KELAPA DUA': [-6.2372, 106.6143],
-    'MEDAN SUNGGAL': [3.5786, 98.6256]
+    'MEDAN SUNGGAL': [3.5786, 98.6256], 'KARAWANG': [-6.3016, 107.3006],
+    'CIBITUNG': [-6.2657, 107.1025], 'CIKARANG': [-6.2731, 107.1534],
+    'PURWAKARTA': [-6.5568, 107.4421], 'SUBANG': [-6.5688, 107.7585]
 }
 
-@st.cache_data(show_spinner=False)
 def get_coordinates(city_name):
     if pd.isna(city_name) or city_name == "-": return [None, None]
-    city_up = city_name.upper()
-    if city_up in CITY_COORDS: return CITY_COORDS[city_up]
-    try:
-        geolocator = Nominatim(user_agent="sco_dashboard_grand_taruma")
-        location = geolocator.geocode(f"{city_name}, Indonesia")
-        if location: return [location.latitude, location.longitude]
-    except:
-        pass
-    return [None, None]
+    city_up = str(city_name).upper().strip()
+    return CITY_COORDS.get(city_up, [-6.2088, 106.8456]) # Default ke Jakarta kalau tidak ketemu
 
 # ==========================================
 # SIDEBAR KIRI
