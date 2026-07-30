@@ -637,31 +637,45 @@ with tab2:
 # ==========================================
 # TAB 3: KINERJA SCO
 # ==========================================
+# ==========================================
+# TAB 3: KINERJA SCO
+# ==========================================
 with tab3:
     if selected_kpi == "Cash":
         st.header("👨‍💼 Rata-Rata Hari Masuk & Produktivitas SCO")
         if df_rata2_active.empty:
             st.info("Data sheet 'Rata-Rata Hari Masuk' tidak ditemukan di file Cash ini.")
         else:
-            df_r_clean = df_rata2_active.copy()
-            if selected_sco:
-                df_r_clean = df_r_clean[df_r_clean['User id'].isin(selected_sco)]
-            for col in ['Total_Connote', 'Revenue', 'Hari_Masuk']:
-                if col in df_r_clean.columns: df_r_clean[col] = pd.to_numeric(df_r_clean[col], errors='coerce').fillna(0)
-            agg_rules = {}
-            if 'Total_Connote' in df_r_clean.columns: agg_rules['Total_Connote'] = 'sum'
-            if 'Revenue' in df_r_clean.columns: agg_rules['Revenue'] = 'sum'
-            if 'Hari_Masuk' in df_r_clean.columns: agg_rules['Hari_Masuk'] = 'sum'
-            if agg_rules: df_r_clean = df_r_clean.groupby('User id', as_index=False).agg(agg_rules)
-            if 'Hari_Masuk' in df_r_clean.columns:
-                if 'Total_Connote' in df_r_clean.columns: df_r_clean['Rata_Transaksi_Per_Hari'] = (df_r_clean['Total_Connote'] / df_r_clean['Hari_Masuk']).fillna(0).round(1)
-                if 'Revenue' in df_r_clean.columns: df_r_clean['Rata_Pendapatan_Per_Hari'] = (df_r_clean['Revenue'] / df_r_clean['Hari_Masuk']).fillna(0)
-            if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns: df_r_clean['Rata_Pendapatan_Per_Hari_Num'] = df_r_clean['Rata_Pendapatan_Per_Hari']
+            # 1. Siapin data Hari_Masuk per SCO (karena di sheet ini gak ada kolom tanggal, kita totalin aja)
+            hari_masuk_df = df_rata2_active.copy()
+            if 'Hari_Masuk' in hari_masuk_df.columns:
+                hari_masuk_df['Hari_Masuk'] = pd.to_numeric(hari_masuk_df['Hari_Masuk'], errors='coerce').fillna(0)
+                hari_masuk_df = hari_masuk_df.groupby('User id', as_index=False).agg({'Hari_Masuk': 'sum'})
+            else:
+                hari_masuk_df = pd.DataFrame(columns=['User id', 'Hari_Masuk'])
+
+            # 2. Ambil Revenue & Connote dari df_filtered biar 100% balance sama Tab 1 (udah ke-filter Date & SCO)
+            df_r_clean = df_filtered.groupby('SCO', as_index=False).agg(
+                Total_Connote=('Revenue', 'count'),
+                Revenue=('Revenue', 'sum')
+            ).rename(columns={'SCO': 'User id'})
+
+            # 3. Gabungin data Revenue/Connote dengan Hari_Masuk
+            df_r_clean = pd.merge(df_r_clean, hari_masuk_df, on='User id', how='left')
+            df_r_clean['Hari_Masuk'] = df_r_clean['Hari_Masuk'].fillna(0)
+
+            # 4. Hitung rata-rata dengan aman (Pencegahan error pembagian 0 / inf value)
+            df_r_clean['Rata_Transaksi_Per_Hari'] = (df_r_clean['Total_Connote'] / df_r_clean['Hari_Masuk'].replace(0, pd.NA)).fillna(0).round(1)
+            df_r_clean['Rata_Pendapatan_Per_Hari'] = (df_r_clean['Revenue'] / df_r_clean['Hari_Masuk'].replace(0, pd.NA)).fillna(0)
             
-            if 'Revenue' in df_r_clean.columns: df_r_clean['Revenue'] = df_r_clean['Revenue'].apply(format_rupiah)
-            if 'Rata_Pendapatan_Per_Hari' in df_r_clean.columns: df_r_clean['Rata_Pendapatan_Per_Hari'] = df_r_clean['Rata_Pendapatan_Per_Hari'].apply(format_rupiah)
-            if 'Total_Connote' in df_r_clean.columns: df_r_clean['Total_Connote'] = df_r_clean['Total_Connote'].astype(int)
-            if 'Hari_Masuk' in df_r_clean.columns: df_r_clean['Hari_Masuk'] = df_r_clean['Hari_Masuk'].astype(int)
+            # Bikin salinan numerik buat chart sebelum di-format jadi string Rupiah
+            df_r_clean['Rata_Pendapatan_Per_Hari_Num'] = df_r_clean['Rata_Pendapatan_Per_Hari']
+
+            # 5. Format tampilan
+            df_r_clean['Revenue'] = df_r_clean['Revenue'].apply(format_rupiah)
+            df_r_clean['Rata_Pendapatan_Per_Hari'] = df_r_clean['Rata_Pendapatan_Per_Hari'].apply(format_rupiah)
+            df_r_clean['Total_Connote'] = df_r_clean['Total_Connote'].astype(int)
+            df_r_clean['Hari_Masuk'] = df_r_clean['Hari_Masuk'].astype(int)
             
             if 'Rata_Pendapatan_Per_Hari_Num' in df_r_clean.columns:
                 st.subheader("📊 Rata-Rata Pendapatan Harian")
@@ -671,12 +685,14 @@ with tab3:
                     color=alt.Color('User id:N', scale=alt.Scale(range=BRAND_CATEGORICAL), legend=None), tooltip=['User id', 'Hari_Masuk', 'Rata_Pendapatan_Per_Hari']
                 ).properties(height=350)
                 st.altair_chart(chart_abs, use_container_width=True)
+            
             st.subheader("📋 Tabel Detail Kinerja (CASH)")
             cols = [c for c in df_r_clean.columns if not c.endswith('_Num')]
             df_r_display = df_r_clean[cols].copy()
             df_r_display.index = range(1, len(df_r_display) + 1)
             # POLISH: highlight baris juara (rank 1) berdasar urutan tabel apa adanya
             st.dataframe(style_top_row(df_r_display), use_container_width=True)
+            
     else:
         st.header(f"👨‍💼 Rekapitulasi Kinerja SCO ({selected_kpi})")
         rekap_sco = df_filtered.groupby('SCO', as_index=False).agg(Total_Resi=('Revenue', 'count'), Total_Revenue=('Revenue', 'sum')).sort_values('Total_Revenue', ascending=False)
