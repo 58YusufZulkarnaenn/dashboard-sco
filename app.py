@@ -4,7 +4,9 @@ import altair as alt
 import glob
 import os
 import base64
+import requests
 from header_photo_data import HEADER_PHOTO_B64
+from streamlit_lottie import st_lottie
 
 # ==========================================
 # 1. SETTING HALAMAN & INJEKSI CSS PREMIUM
@@ -26,7 +28,6 @@ BRAND_CATEGORICAL = [BRAND_TEAL, BRAND_GOLD, BRAND_CYAN, "#0096c7", "#48cae4", "
 # Palet sequential/gradient (dipakai utk chart yang di-rank by value, ex: Top Customer)
 BRAND_SEQUENTIAL = ["#0f9b8e", "#14b8a6", "#2dd4bf", "#5eead4", "#99f6e4", "#64ffda"]
 BRAND_SEQUENTIAL_GOLD = ["#7a5c00", "#b8860b", "#daa520", "#e8b923", "#ffd166", "#ffe699"]
-
 
 def add_custom_css():
     st.markdown("""
@@ -165,6 +166,21 @@ def add_custom_css():
 add_custom_css()
 
 # ==========================================
+# ANIMASI LOTTIE
+# ==========================================
+@st.cache_data
+def load_lottieurl(url: str):
+    try:
+        r = requests.get(url)
+        if r.status_code != 200: return None
+        return r.json()
+    except:
+        return None
+
+lottie_empty = load_lottieurl("https://lottie.host/8c0678a3-2c1b-4171-af63-1463132e01df/p3F2Q1MTh5.json")
+
+
+# ==========================================
 # 2. TEMA ALTAIR GLOBAL (SEAMLESS BACKGROUND)
 # ==========================================
 def altair_dark_theme():
@@ -224,11 +240,21 @@ def clean_destination(dest, kpi_type):
     else:
         return dest_str.split(',')[0].strip()
 
+# FIX 3: Tambahin parameter get_mtime buat memecahkan masalah cache yang nyangkut
+def get_file_mtimes(file_list):
+    mtimes = []
+    for f in file_list:
+        if isinstance(f, str) and os.path.exists(f):
+            mtimes.append(os.path.getmtime(f))
+        elif hasattr(f, 'size'):
+            mtimes.append(f.size)
+    return tuple(mtimes)
+
 @st.cache_data
-def load_unified_data(file_list):
+def load_unified_data(file_list, _mtimes):
     all_raw = []
     all_rata2 = []
-    load_errors = []  # POLISH: nampung nama file & pesan error, biar gak silent-fail lagi
+    load_errors = []  
 
     for f in file_list:
         fname_for_error = f.name if hasattr(f, 'name') else os.path.basename(str(f))
@@ -240,7 +266,6 @@ def load_unified_data(file_list):
                 filename = os.path.basename(f).lower()
                 xls_input = f
             
-            # --- FIX TYPO DISINI BRO! (Dari kpi_type jadi filename) ---
             if "cashless" in filename: kpi_type = "Cashless"
             elif "kredit auto" in filename: kpi_type = "Kredit Auto"
             elif "kredit manual" in filename: kpi_type = "Kredit Manual" 
@@ -254,21 +279,23 @@ def load_unified_data(file_list):
                 df_std = pd.DataFrame(index=df.index) 
                 df_std['KPI'] = kpi_type
                 
+                # Biar bisa ngetrack bulan data ini aslinya dari mana (untuk Fix Tab 3)
+                df_std['Source_File'] = filename
+                
                 col_sco = 'User id' if 'User id' in df.columns else ('User Id' if 'User Id' in df.columns else None)
                 df_std['SCO'] = df[col_sco] if col_sco else "UNKNOWN"
                 
                 col_date = 'Created date' if 'Created date' in df.columns else 'Date'
-                df_std['Date'] = pd.to_datetime(df[col_date], errors='coerce')
+                # FIX 2: Tambah dayfirst=True biar format Indo DD/MM/YYYY gak ketuker jadi format Bule
+                df_std['Date'] = pd.to_datetime(df[col_date], errors='coerce', dayfirst=True)
                 
                 col_rev = 'Cnote Amount' if 'Cnote Amount' in df.columns else 'Amount'
                 df_std['Revenue'] = pd.to_numeric(df[col_rev], errors='coerce').fillna(0)
                 
                 df_std['Weight'] = pd.to_numeric(df['Weight'] if 'Weight' in df.columns else 0, errors='coerce').fillna(0)
 
-                # NEW: Qty (jumlah koli/paket per resi) — dipakai buat insight efisiensi
-                df_std['Qty'] = pd.to_numeric(df['Qty'] if 'Qty' in df.columns else 1, errors='coerce').fillna(1)
+                # FIX 4: Qty dihapus sesuai instruksi
 
-                # NEW: Insurance (nilai premi asuransi per resi) — cuma ada di data Cash
                 if 'Insurance' in df.columns:
                     df_std['Insurance'] = pd.to_numeric(df['Insurance'], errors='coerce').fillna(0)
                 else:
@@ -293,11 +320,11 @@ def load_unified_data(file_list):
             
             if kpi_type == "Cash" and "Rata-Rata Hari Masuk" in xls.sheet_names:
                 df_r = pd.read_excel(xls, "Rata-Rata Hari Masuk")
+                # Tambahin info source file juga buat difilter nanti (Fix Tab 3)
+                df_r['Source_File'] = filename 
                 all_rata2.append(df_r)
 
         except Exception as e:
-            # FIX: dulu di-"except...pass" doang, jadi kalau ada file korup/format beda
-            # datanya ke-skip diam-diam tanpa ketahuan. Sekarang errornya dicatat & bisa ditampilkan.
             load_errors.append(f"{fname_for_error}: {e}")
 
     df_master = pd.concat(all_raw, ignore_index=True) if all_raw else pd.DataFrame()
@@ -339,16 +366,17 @@ else:
     active_files = list_local
 
 if not active_files:
+    if lottie_empty: st_lottie(lottie_empty, height=200, key="empty_file")
     st.error("⚠️ Data server kosong dan belum ada file yang di-upload.")
     st.stop()
 
-df_global, _, global_load_errors = load_unified_data(active_files)
+# Terapin fix cache di pemanggilan data
+df_global, _, global_load_errors = load_unified_data(active_files, get_file_mtimes(active_files))
+
 if df_global.empty:
     st.error("Gagal membaca data. Pastikan sheet 'Raw Data' ada di dalam file.")
     st.stop()
 
-# FIX: kalau ada file yang gagal ke-parse, sekarang ketauan lewat warning di sidebar
-# (dulu di-skip diam-diam, sekarang minimal user tau file mana yang bermasalah)
 if global_load_errors:
     with st.sidebar.expander(f"⚠️ {len(global_load_errors)} file gagal dibaca", expanded=False):
         for err in global_load_errors:
@@ -374,10 +402,9 @@ if not list_file_kpi:
     st.sidebar.warning(f"File untuk KPI {selected_kpi} tidak ditemukan.")
     st.stop()
 
-# Langsung Bypass Filter
+# Langsung Bypass Filter (Terapin fix cache)
 selected_files = list_file_kpi
-
-df_active, df_rata2_active, _ = load_unified_data(selected_files)
+df_active, df_rata2_active, _ = load_unified_data(selected_files, get_file_mtimes(selected_files))
 
 # --- SABUK PENGAMAN (FIX ERROR) ---
 if df_active.empty:
@@ -416,11 +443,9 @@ csv_data = df_filtered.to_csv(index=False).encode('utf-8')
 st.sidebar.download_button(label=f"Download Rekap {selected_kpi} (CSV)", data=csv_data, file_name=f"Data_Export_{selected_kpi}.csv", mime='text/csv')
 
 # ==========================================
-# TAMPILAN DASHBOARD (HERO HEADER BANNER - OPSI B)
+# TAMPILAN DASHBOARD (HERO HEADER BANNER)
 # ==========================================
-# REVISI 1: Foto full jadi background banner hero.
-# - background-position: center 25% memastikan potongan foto fokus di wajah/badan atas orangnya.
-# - Gradient gelap (95% -> 80% -> 35%) menjaga teks judul super terang dan jelas terbaca.
+# FIX 5: background-position: center center biar muka & seragam orangnya keliatan sempurna.
 st.markdown(f"""
 <div style="
     position: relative;
@@ -431,7 +456,7 @@ st.markdown(f"""
     background: linear-gradient(90deg, rgba(15, 32, 39, 0.95) 0%, rgba(15, 32, 39, 0.82) 55%, rgba(15, 32, 39, 0.35) 100%), 
                 url('data:image/jpeg;base64,{HEADER_PHOTO_B64}');
     background-size: cover;
-    background-position: center 25%;
+    background-position: center center;
     border: 1px solid rgba(100, 255, 218, 0.35);
     box-shadow: 0 10px 35px rgba(0, 0, 0, 0.5);
     overflow: hidden;
@@ -452,6 +477,7 @@ st.markdown(f"""
 st.markdown("---")
 
 if df_filtered.empty:
+    if lottie_empty: st_lottie(lottie_empty, height=250, key="empty_filtered")
     st.warning("⚠️ Data kosong pada rentang waktu atau SCO yang dipilih.")
     st.stop()
 
@@ -483,7 +509,6 @@ with tab1:
     srv_top = df_filtered['Service'].mode()[0] if not df_filtered['Service'].empty else "-"
     pay_top = df_filtered['Payment_Method'].mode()[0] if not df_filtered['Payment_Method'].empty else "-"
     
-    # POLISH: insight box beda ikon/warna tergantung seberapa dominan kontribusi Best SCO
     share_best = (best_user_rev / total_rev * 100) if total_rev > 0 else 0
     if share_best >= 40:
         insight_icon = "🔥"
@@ -512,8 +537,6 @@ with tab1:
     c7.metric("🚚 LAYANAN TERLARIS", srv_top)
     c8.metric("💳 METODE FAVORIT", pay_top)
 
-    # REVISI 2: Metrik "Revenue / KG" dan "Rata-rata QTY / Resi" dihapus total.
-    # Sekarang hanya menampilkan ringkasan Asuransi (khusus KPI Cash).
     total_insurance_val = df_filtered['Insurance'].sum() if 'Insurance' in df_filtered.columns else 0
     ada_asuransi = selected_kpi == "Cash" and total_insurance_val > 0
 
@@ -578,7 +601,6 @@ with tab2:
     if df_cust.empty:
         st.info("Tidak ada data Customer (Shipper Name) di rentang waktu/SCO ini.")
     else:
-        # NEW: insight box konsentrasi customer (deteksi risiko ketergantungan ke 1 customer besar)
         cust_rev_rank = df_cust.groupby('Customer')['Revenue'].sum().sort_values(ascending=False)
         n_unique_cust = df_cust['Customer'].nunique()
         top1_cust = cust_rev_rank.index[0]
@@ -616,7 +638,6 @@ with tab2:
             top_rev_tabel = top_rev.copy()
             top_rev_tabel['Total Belanja'] = top_rev_tabel['Total Belanja'].apply(format_rupiah)
             top_rev_tabel.index = range(1, len(top_rev_tabel) + 1)
-            # POLISH: highlight baris juara (rank 1)
             st.dataframe(style_top_row(top_rev_tabel), use_container_width=True)
 
         with col_con:
@@ -631,12 +652,8 @@ with tab2:
             top_con_tabel = top_con.copy()
             top_con_tabel['Total Belanja'] = top_con_tabel['Total Belanja'].apply(format_rupiah)
             top_con_tabel.index = range(1, len(top_con_tabel) + 1)
-            # POLISH: highlight baris juara (rank 1)
             st.dataframe(style_top_row(top_con_tabel), use_container_width=True)
 
-# ==========================================
-# TAB 3: KINERJA SCO
-# ==========================================
 # ==========================================
 # TAB 3: KINERJA SCO
 # ==========================================
@@ -646,32 +663,28 @@ with tab3:
         if df_rata2_active.empty:
             st.info("Data sheet 'Rata-Rata Hari Masuk' tidak ditemukan di file Cash ini.")
         else:
-            # 1. Siapin data Hari_Masuk per SCO (karena di sheet ini gak ada kolom tanggal, kita totalin aja)
-            hari_masuk_df = df_rata2_active.copy()
-            if 'Hari_Masuk' in hari_masuk_df.columns:
-                hari_masuk_df['Hari_Masuk'] = pd.to_numeric(hari_masuk_df['Hari_Masuk'], errors='coerce').fillna(0)
-                hari_masuk_df = hari_masuk_df.groupby('User id', as_index=False).agg({'Hari_Masuk': 'sum'})
+            # FIX 1: Filter sheet Hari Masuk berdasarkan file sumber (Source_File) yang lagi aktif dilihat di Date Filter
+            active_sources = df_filtered['Source_File'].unique().tolist()
+            hari_masuk_filtered = df_rata2_active[df_rata2_active['Source_File'].isin(active_sources)].copy()
+            
+            if 'Hari_Masuk' in hari_masuk_filtered.columns:
+                hari_masuk_filtered['Hari_Masuk'] = pd.to_numeric(hari_masuk_filtered['Hari_Masuk'], errors='coerce').fillna(0)
+                hari_masuk_df = hari_masuk_filtered.groupby('User id', as_index=False).agg({'Hari_Masuk': 'sum'})
             else:
                 hari_masuk_df = pd.DataFrame(columns=['User id', 'Hari_Masuk'])
 
-            # 2. Ambil Revenue & Connote dari df_filtered biar 100% balance sama Tab 1 (udah ke-filter Date & SCO)
             df_r_clean = df_filtered.groupby('SCO', as_index=False).agg(
                 Total_Connote=('Revenue', 'count'),
                 Revenue=('Revenue', 'sum')
             ).rename(columns={'SCO': 'User id'})
 
-            # 3. Gabungin data Revenue/Connote dengan Hari_Masuk
             df_r_clean = pd.merge(df_r_clean, hari_masuk_df, on='User id', how='left')
             df_r_clean['Hari_Masuk'] = df_r_clean['Hari_Masuk'].fillna(0)
 
-            # 4. Hitung rata-rata dengan aman (Pencegahan error pembagian 0 / inf value)
             df_r_clean['Rata_Transaksi_Per_Hari'] = (df_r_clean['Total_Connote'] / df_r_clean['Hari_Masuk'].replace(0, pd.NA)).fillna(0).round(1)
             df_r_clean['Rata_Pendapatan_Per_Hari'] = (df_r_clean['Revenue'] / df_r_clean['Hari_Masuk'].replace(0, pd.NA)).fillna(0)
-            
-            # Bikin salinan numerik buat chart sebelum di-format jadi string Rupiah
             df_r_clean['Rata_Pendapatan_Per_Hari_Num'] = df_r_clean['Rata_Pendapatan_Per_Hari']
 
-            # 5. Format tampilan
             df_r_clean['Revenue'] = df_r_clean['Revenue'].apply(format_rupiah)
             df_r_clean['Rata_Pendapatan_Per_Hari'] = df_r_clean['Rata_Pendapatan_Per_Hari'].apply(format_rupiah)
             df_r_clean['Total_Connote'] = df_r_clean['Total_Connote'].astype(int)
@@ -690,7 +703,6 @@ with tab3:
             cols = [c for c in df_r_clean.columns if not c.endswith('_Num')]
             df_r_display = df_r_clean[cols].copy()
             df_r_display.index = range(1, len(df_r_display) + 1)
-            # POLISH: highlight baris juara (rank 1) berdasar urutan tabel apa adanya
             st.dataframe(style_top_row(df_r_display), use_container_width=True)
             
     else:
@@ -708,9 +720,7 @@ with tab3:
         tabel_sco = tabel_sco.drop(columns=['Total_Revenue_Num'])
         tabel_sco.index = range(1, len(tabel_sco) + 1)
         st.subheader(f"📋 Tabel Detail Kinerja ({selected_kpi})")
-        # POLISH: highlight baris juara (rank 1)
         st.dataframe(style_top_row(tabel_sco), use_container_width=True)
- 
 
 # ==========================================
 # TAB 4: POLA HARI & JAM SIBUK
@@ -718,7 +728,6 @@ with tab3:
 with tab4:
     st.header(f"⏰ Jam Operasional ({selected_kpi})")
 
-    # NEW: insight box pola hari & jam sibuk
     df_filtered_hari = df_filtered.copy()
     hari_map_ins = {'Monday': 'Senin', 'Tuesday': 'Selasa', 'Wednesday': 'Rabu', 'Thursday': 'Kamis', 'Friday': 'Jumat', 'Saturday': 'Sabtu', 'Sunday': 'Minggu'}
     df_filtered_hari['Hari_Ins'] = df_filtered_hari['Date'].dt.day_name().map(hari_map_ins)
@@ -764,7 +773,6 @@ with tab4:
 with tab5:
     st.header(f"💳 Distribusi Layanan & Metode Pembayaran ({selected_kpi})")
 
-    # NEW: insight box layanan & metode pembayaran terlaris
     srv_counts = df_filtered['Service'].value_counts()
     pay_counts = df_filtered['Payment_Method'].value_counts()
     if not srv_counts.empty and not pay_counts.empty:
@@ -797,7 +805,6 @@ with tab5:
         ).properties(height=300)
         st.altair_chart(chart_pay, use_container_width=True)
 
-    # NEW: Ringkasan Asuransi — khusus KPI Cash (kolom Insurance cuma ada di data Cash)
     if selected_kpi == "Cash" and 'Insurance' in df_filtered.columns and df_filtered['Insurance'].sum() > 0:
         st.markdown("---")
         st.subheader("🛡️ Ringkasan Asuransi Pengiriman")
@@ -830,7 +837,6 @@ with tab6:
     if not df_dest.empty:
         dest_df = df_dest.groupby('Destination', as_index=False).agg({'Revenue': 'sum', 'SCO': 'count'}).rename(columns={'SCO': 'Total Resi'}).sort_values('Total Resi', ascending=False)
 
-        # NEW: insight box destinasi terbanyak
         top_dest = dest_df.iloc[0]['Destination']
         top_dest_resi = dest_df.iloc[0]['Total Resi']
         top_dest_share = (top_dest_resi / dest_df['Total Resi'].sum() * 100)
@@ -869,8 +875,6 @@ with tab6:
         
         map_df = dest_df.dropna(subset=['lat', 'lon']).copy()
 
-        # FIX: dulu wilayah yang gak ada di CITY_COORDS diam-diam ke-drop dari peta tanpa keterangan.
-        # Sekarang user dikasih tau berapa wilayah & berapa resi yang belum bisa dipetakan.
         unmapped_df = dest_df[dest_df['lat'].isna()]
         if not unmapped_df.empty:
             unmapped_resi = unmapped_df['Total Resi'].sum()
@@ -883,8 +887,6 @@ with tab6:
             max_resi = map_df['Total Resi'].max()
             min_resi = map_df['Total Resi'].min()
             
-            # POLISH: gradient warna diselaraskan ke tema brand (teal gelap -> teal terang -> emas)
-            # dari rgb(15,155,142) [BRAND_TEAL_DARK] ke rgb(255,209,102) [BRAND_GOLD]
             def get_color(resi):
                 if max_resi == min_resi:
                     norm = 0.5
@@ -914,7 +916,6 @@ with tab6:
             
             view_state = pdk.ViewState(latitude=-6.2, longitude=110.0, zoom=5, pitch=50, bearing=15)
             
-            # POLISH: tooltip pydeck dikustom jadi dark + aksen teal biar nyatu sama tema
             r = pdk.Deck(
                 layers=[layer], initial_view_state=view_state,
                 tooltip={
@@ -949,7 +950,6 @@ with tab6:
             st.altair_chart(chart_dest, use_container_width=True)
         with d2:
             top15_df.index = range(1, len(top15_df) + 1) 
-            # POLISH: highlight baris juara (rank 1)
             st.dataframe(style_top_row(top15_df[['Destination', 'Total Resi']]), use_container_width=True)
     else:
         st.info("Data destinasi tidak tersedia di file ini.")
@@ -992,7 +992,7 @@ with tab7:
         st.dataframe(tabel_tren[['Periode', 'Total Transaksi', 'Total Revenue']], use_container_width=True)
 
         # ==========================================
-        # NEW: GROWTH MoM (otomatis pakai 2 periode terakhir yang tersedia di data)
+        # GROWTH MoM 
         # ==========================================
         st.markdown("---")
         if len(tren_bulan) >= 2:
@@ -1028,7 +1028,6 @@ with tab7:
             cm2.metric("⚠️ CUSTOMER HILANG", f"{len(cust_churned)} Customer", delta=f"Order di {periode_prev['Periode']}, tidak lanjut", delta_color="inverse")
             cm3.metric("♻️ CUSTOMER BERTAHAN", f"{len(cust_retained)} Customer")
 
-            # Prioritaskan customer hilang berdasarkan besarnya revenue yang mereka bawa sebelumnya (buat win-back)
             if cust_churned:
                 rev_prev_by_cust = df_cust_period[
                     (df_cust_period['Sort_Bulan'] == periode_prev['Sort_Bulan']) & (df_cust_period['Customer'].isin(cust_churned))
@@ -1066,7 +1065,6 @@ with tab8:
     g2.metric("📦 TOTAL RESI (ALL KPI)", f"{tot_resi_global} Resi")
     g3.metric("👑 MVP SCO (OVERALL)", best_sco_global, f"{format_rupiah(best_sco_rev_global)} Contributed")
 
-    # NEW: insight box perbandingan kontribusi antar pilar KPI (Cash vs Cashless, dst)
     rekap_kpi_global = df_global.groupby('KPI')['Revenue'].sum().sort_values(ascending=False)
     if len(rekap_kpi_global) > 1:
         top_kpi_name = rekap_kpi_global.index[0]
@@ -1112,7 +1110,6 @@ with tab8:
         global_rekap[c] = global_rekap[c].apply(format_rupiah)
         
     global_rekap.index = range(1, len(global_rekap) + 1)
-    # POLISH: highlight baris juara (rank 1) — sudah ke-sort by Total Pendapatan Akhir
     st.dataframe(style_top_row(global_rekap), use_container_width=True)
 
 # ==========================================
