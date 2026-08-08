@@ -475,6 +475,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 st.markdown("---")
+
 if df_filtered.empty:
     if lottie_empty: st_lottie(lottie_empty, height=250, key="empty_filtered")
     st.warning("⚠️ Data kosong pada rentang waktu atau SCO yang dipilih.")
