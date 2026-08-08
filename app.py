@@ -459,7 +459,7 @@ st.markdown(f"""
     background-size: cover;
     background-position: center 100%;
     border: 1px solid rgba(100, 255, 218, 0.35);
-    box-shadow: 0 10px 35px rgba(10, 15, 20, 25);
+    box-shadow: 0 10px 35px rgba(0.8, 0.8, 0.8, 0.8);
     overflow: hidden;
 ">
     <div style="position: relative; z-index: 2; max-width: 75%;">
