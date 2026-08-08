@@ -445,36 +445,38 @@ st.sidebar.download_button(label=f"Download Rekap {selected_kpi} (CSV)", data=cs
 # ==========================================
 # TAMPILAN DASHBOARD (HERO HEADER BANNER)
 # ==========================================
+# FIX 5: background-position: center center biar muka & seragam orangnya keliatan sempurna.
+
 st.markdown(f"""
 <div style="
-    position: relative;
-    width: 100%;
-    padding: 110px 32px; 
-    border-radius: 20px;
-    margin-bottom: 25px;
-    background: linear-gradient(90deg, rgba(15, 32, 39, 0.85) 0%, rgba(15, 32, 39, 0.3) 50%, rgba(15, 32, 39, 0.0) 100%), 
-                url('data:image/jpeg;base64,{HEADER_PHOTO_B64}');
-    background-size: cover;
-    background-repeat: no-repeat;
-    background-position: center 100%;
-    border: 1px solid rgba(100, 255, 218, 0.35);
-    box-shadow: 0 10px 35px rgba(0, 0, 0, 0.5);
-    overflow: hidden;
+    position: relative;
+    width: 100%;
+    padding: 100px 32px;
+    border-radius: 20px;
+    margin-bottom: 25px;
+    background: linear-gradient(90deg, rgba(15, 32, 39, 0.95) 0%, rgba(15, 32, 39, 0.82) 55%, rgba(15, 32, 39, 0.35) 100%), 
+                url('data:image/jpeg;base64,{HEADER_PHOTO_B64}');
+    background-size: cover;
+    background-position: center 100%;
+    border: 1px solid rgba(100, 255, 218, 0.35);
+    box-shadow: 0 10px 35px rgba(10, 15, 20, 25);
+    overflow: hidden;
 ">
-    <div style="position: relative; z-index: 2; max-width: 75%;">
-        <div style="font-size: 2.2rem; font-weight: 800; color: #ffffff; line-height: 1.2; text-shadow: 0 2px 10px rgba(0,0,0,0.85);">
-            📊 Dashboard Enterprise KP Grand Taruma
-        </div>
-        <div style="color: #64ffda; font-size: 1.15rem; font-weight: 700; margin-top: 8px; text-shadow: 0 2px 8px rgba(0,0,0,0.85);">
-            By Yusuf Zulkarnaen
-        </div>
-        <div style="color: #e6f1ff; font-size: 0.95rem; font-weight: 600; margin-top: 14px; opacity: 0.95;">
-            Sedang menampilkan analitik untuk pilar: <b style="color: #ffd166; text-transform: uppercase;">{selected_kpi}</b>
-        </div>
-    </div>
+    <div style="position: relative; z-index: 2; max-width: 75%;">
+        <div style="font-size: 2.2rem; font-weight: 800; color: #ffffff; line-height: 1.2; text-shadow: 0 2px 10px rgba(0,0,0,0.85);">
+            📊 Dashboard Enterprise KP Grand Taruma
+        </div>
+        <div style="color: #64ffda; font-size: 1.15rem; font-weight: 700; margin-top: 8px; text-shadow: 0 2px 8px rgba(0,0,0,0.85);">
+            By Yusuf Zulkarnaen
+        </div>
+        <div style="color: #e6f1ff; font-size: 0.95rem; font-weight: 600; margin-top: 14px; opacity: 0.95;">
+            Sedang menampilkan analitik untuk pilar: <b style="color: #ffd166; text-transform: uppercase;">{selected_kpi}</b>
+        </div>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 st.markdown("---")
+
 
 if df_filtered.empty:
     if lottie_empty: st_lottie(lottie_empty, height=250, key="empty_filtered")
