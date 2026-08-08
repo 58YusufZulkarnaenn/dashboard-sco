@@ -445,7 +445,7 @@ st.sidebar.download_button(label=f"Download Rekap {selected_kpi} (CSV)", data=cs
 # ==========================================
 # TAMPILAN DASHBOARD (HERO HEADER BANNER)
 # ==========================================
-# FIX 5: background-position diubah ke center 20% biar muka & seragam orangnya masuk frame.
+# FIX 5: background-position: center center biar muka & seragam orangnya keliatan sempurna.
 st.markdown(f"""
 <div style="
     position: relative;
@@ -456,7 +456,7 @@ st.markdown(f"""
     background: linear-gradient(90deg, rgba(15, 32, 39, 0.95) 0%, rgba(15, 32, 39, 0.82) 55%, rgba(15, 32, 39, 0.35) 100%), 
                 url('data:image/jpeg;base64,{HEADER_PHOTO_B64}');
     background-size: cover;
-    background-position: center 20%;
+    background-position: center center;
     border: 1px solid rgba(100, 255, 218, 0.35);
     box-shadow: 0 10px 35px rgba(0, 0, 0, 0.5);
     overflow: hidden;
