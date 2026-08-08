@@ -450,13 +450,13 @@ st.markdown(f"""
 <div style="
     position: relative;
     width: 100%;
-    padding: 100px 32px;
+    padding: 110px 32px;
     border-radius: 20px;
     margin-bottom: 25px;
     background: linear-gradient(90deg, rgba(15, 32, 39, 0.95) 0%, rgba(15, 32, 39, 0.82) 55%, rgba(15, 32, 39, 0.35) 100%), 
                 url('data:image/jpeg;base64,{HEADER_PHOTO_B64}');
     background-size: cover;
-    background-position: center 95%;
+    background-position: center 100%;
     border: 1px solid rgba(100, 255, 218, 0.35);
     box-shadow: 0 10px 35px rgba(0, 0, 0, 0.5);
     overflow: hidden;
