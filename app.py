@@ -456,7 +456,7 @@ st.markdown(f"""
     background: linear-gradient(90deg, rgba(15, 32, 39, 0.95) 0%, rgba(15, 32, 39, 0.82) 55%, rgba(15, 32, 39, 0.35) 100%), 
                 url('data:image/jpeg;base64,{HEADER_PHOTO_B64}');
     background-size: cover;
-    background-position: center center;
+    background-position: center 20%;
     border: 1px solid rgba(100, 255, 218, 0.35);
     box-shadow: 0 10px 35px rgba(0, 0, 0, 0.5);
     overflow: hidden;
@@ -730,9 +730,11 @@ with tab4:
 
     df_filtered_hari = df_filtered.copy()
     hari_map_ins = {'Monday': 'Senin', 'Tuesday': 'Selasa', 'Wednesday': 'Rabu', 'Thursday': 'Kamis', 'Friday': 'Jumat', 'Saturday': 'Sabtu', 'Sunday': 'Minggu'}
-    df_filtered_hari['Hari_Ins'] = df_filtered_hari['Date'].dt.day_name().map(hari_map_ins)
-    hari_count = df_filtered_hari.groupby('Hari_Ins').size().sort_values(ascending=False)
+    df_filtered_hari['Hari'] = df_filtered_hari['Date'].dt.day_name().map(hari_map_ins)
+    
+    hari_count = df_filtered_hari.groupby('Hari').size().sort_values(ascending=False)
     jam_count = df_filtered_hari.groupby(df_filtered_hari['Date'].dt.hour).size().sort_values(ascending=False)
+    
     if not hari_count.empty and not jam_count.empty:
         hari_tersibuk = hari_count.index[0]
         jam_tersibuk = jam_count.index[0]
@@ -746,26 +748,39 @@ with tab4:
 
     a1, a2 = st.columns(2)
     with a1:
-        hari_map = {'Monday': 'Senin', 'Tuesday': 'Selasa', 'Wednesday': 'Rabu', 'Thursday': 'Kamis', 'Friday': 'Jumat', 'Saturday': 'Sabtu', 'Sunday': 'Minggu'}
-        df_filtered['Hari'] = df_filtered['Date'].dt.day_name().map(hari_map)
         hari_order = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu']
-        pola_df = df_filtered.groupby('Hari', as_index=False).size().rename(columns={'size':'Total Transaksi'})
+        pola_df = df_filtered_hari.groupby('Hari', as_index=False).size().rename(columns={'size':'Total Transaksi'})
         chart_pola = alt.Chart(pola_df).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
             x=alt.X('Hari:N', sort=hari_order), y=alt.Y('Total Transaksi:Q'),
             color=alt.condition(alt.datum['Total Transaksi'] == pola_df['Total Transaksi'].max(), alt.value(BRAND_GOLD), alt.value(BRAND_TEAL)),
             tooltip=['Hari', 'Total Transaksi']
         ).properties(height=350)
         st.altair_chart(chart_pola, use_container_width=True)
+        
     with a2:
-        df_filtered['Jam'] = df_filtered['Date'].dt.hour
-        jam_df = df_filtered.groupby('Jam', as_index=False).size().rename(columns={'size':'Total Transaksi'})
-        jam_df['Jam_Label'] = jam_df['Jam'].apply(lambda x: f"{x:02d}:00")
-        chart_jam = alt.Chart(jam_df).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-            x=alt.X('Jam_Label:N', sort=jam_df['Jam_Label'].tolist(), title='Jam'), y=alt.Y('Total Transaksi:Q'),
-            color=alt.condition(alt.datum['Total Transaksi'] == jam_df['Total Transaksi'].max(), alt.value(BRAND_GOLD), alt.value(BRAND_TEAL)),
-            tooltip=['Jam_Label', 'Total Transaksi']
-        ).properties(height=350)
-        st.altair_chart(chart_jam, use_container_width=True)
+        # Fitur Baru: Filter dinamis per hari untuk ngecek jam sibuk
+        pilihan_hari = ["Semua Hari", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+        hari_terpilih = st.selectbox("🎯 Cek Jam Sibuk Spesifik di Hari:", pilihan_hari)
+
+        if hari_terpilih == "Semua Hari":
+            df_jam = df_filtered_hari.copy()
+        else:
+            df_jam = df_filtered_hari[df_filtered_hari['Hari'] == hari_terpilih].copy()
+
+        if not df_jam.empty:
+            df_jam['Jam'] = df_jam['Date'].dt.hour
+            jam_df = df_jam.groupby('Jam', as_index=False).size().rename(columns={'size':'Total Transaksi'})
+            jam_df['Jam_Label'] = jam_df['Jam'].apply(lambda x: f"{x:02d}:00")
+            
+            # Tinggi chart disesuaikan biar sejajar dengan chart sebelahnya setelah ditambah selectbox
+            chart_jam = alt.Chart(jam_df).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
+                x=alt.X('Jam_Label:N', sort=jam_df['Jam_Label'].tolist(), title='Jam'), y=alt.Y('Total Transaksi:Q'),
+                color=alt.condition(alt.datum['Total Transaksi'] == jam_df['Total Transaksi'].max(), alt.value(BRAND_GOLD), alt.value(BRAND_TEAL)),
+                tooltip=['Jam_Label', 'Total Transaksi']
+            ).properties(height=280) 
+            st.altair_chart(chart_jam, use_container_width=True)
+        else:
+            st.info(f"Belum ada data transaksi di hari {hari_terpilih}.")
 
 # ==========================================
 # TAB 5: LAYANAN & PAYMENT
