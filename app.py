@@ -501,15 +501,16 @@ with tab1:
     total_berat = df_filtered['Weight'].sum()
     rata_transaksi = total_rev / total_resi if total_resi > 0 else 0
     
-    rekap_user = df_filtered.groupby('SCO')['Revenue'].sum().sort_values(ascending=False)
-    best_user = rekap_user.index[0] if not rekap_user.empty else "-"
-    best_user_rev = rekap_user.iloc[0] if not rekap_user.empty else 0
+    # MODIFIKASI: BEST SCO BERDASARKAN TOTAL TRANSAKSI (RESI)
+    rekap_user_resi = df_filtered.groupby('SCO').size().sort_values(ascending=False)
+    best_user = rekap_user_resi.index[0] if not rekap_user_resi.empty else "-"
+    best_user_resi = rekap_user_resi.iloc[0] if not rekap_user_resi.empty else 0
     
     sco_aktif = df_filtered['SCO'].nunique()
     srv_top = df_filtered['Service'].mode()[0] if not df_filtered['Service'].empty else "-"
     pay_top = df_filtered['Payment_Method'].mode()[0] if not df_filtered['Payment_Method'].empty else "-"
     
-    share_best = (best_user_rev / total_rev * 100) if total_rev > 0 else 0
+    share_best = (best_user_resi / total_resi * 100) if total_resi > 0 else 0
     if share_best >= 40:
         insight_icon = "🔥"
         insight_class = "insight-box"
@@ -519,7 +520,7 @@ with tab1:
 
     st.markdown(f"""
     <div class="{insight_class}">
-        <b>{insight_icon} Automated Insight:</b> Berdasarkan periode yang dipilih, <b>{best_user}</b> memimpin kontribusi SCO dengan revenue <b>{format_rupiah(best_user_rev)}</b>. 
+        <b>{insight_icon} Automated Insight:</b> Berdasarkan periode yang dipilih, <b>{best_user}</b> memimpin kontribusi SCO dengan <b>{best_user_resi} transaksi (resi)</b>. 
         Secara keseluruhan, layanan <b>{srv_top}</b> paling sering diandalkan oleh pelanggan.
     </div>
     """, unsafe_allow_html=True)
@@ -532,7 +533,7 @@ with tab1:
     
     st.markdown("<br>", unsafe_allow_html=True)
     c5, c6, c7, c8 = st.columns(4)
-    c5.metric("🏆 BEST SCO", f"{best_user}", delta=f"{total_resi} Resi Dikelola")
+    c5.metric("🏆 BEST SCO", f"{best_user}", delta=f"{best_user_resi} Resi Dikelola")
     c6.metric("👥 SCO AKTIF", f"{sco_aktif} Orang")
     c7.metric("🚚 LAYANAN TERLARIS", srv_top)
     c8.metric("💳 METODE FAVORIT", pay_top)
@@ -1071,14 +1072,16 @@ with tab8:
     
     tot_rev_global = df_global['Revenue'].sum()
     tot_resi_global = len(df_global)
-    rekap_sco_global = df_global.groupby('SCO')['Revenue'].sum()
+    
+    # MODIFIKASI: BEST SCO OVERALL BERDASARKAN TOTAL TRANSAKSI (RESI)
+    rekap_sco_global = df_global.groupby('SCO').size()
     best_sco_global = rekap_sco_global.idxmax() if not rekap_sco_global.empty else "-"
-    best_sco_rev_global = rekap_sco_global.max() if not rekap_sco_global.empty else 0
+    best_sco_resi_global = rekap_sco_global.max() if not rekap_sco_global.empty else 0
 
     g1, g2, g3 = st.columns(3)
     g1.metric("🌍 TOTAL REVENUE (ALL KPI)", format_rupiah(tot_rev_global))
     g2.metric("📦 TOTAL RESI (ALL KPI)", f"{tot_resi_global} Resi")
-    g3.metric("👑 MVP SCO (OVERALL)", best_sco_global, f"{format_rupiah(best_sco_rev_global)} Contributed")
+    g3.metric("👑 MVP SCO (OVERALL)", best_sco_global, f"{best_sco_resi_global} Resi Contributed")
 
     rekap_kpi_global = df_global.groupby('KPI')['Revenue'].sum().sort_values(ascending=False)
     if len(rekap_kpi_global) > 1:
