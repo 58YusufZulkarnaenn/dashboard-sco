@@ -502,8 +502,8 @@ with tab1:
     rata_transaksi = total_rev / total_resi if total_resi > 0 else 0
     
     rekap_user = df_filtered.groupby('SCO')['Revenue'].sum().sort_values(ascending=False)
-    best_user = rekap_user_resi.index[0] if not rekap_user_resi.empty else "-"
-    best_user_resi = rekap_user_resi.iloc[0] if not rekap_user_resi.empty else 0
+    best_user = rekap_user.index[0] if not rekap_user.empty else "-"
+    best_user_rev = rekap_user.iloc[0] if not rekap_user.empty else 0
     
     sco_aktif = df_filtered['SCO'].nunique()
     srv_top = df_filtered['Service'].mode()[0] if not df_filtered['Service'].empty else "-"
