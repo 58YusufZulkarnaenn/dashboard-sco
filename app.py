@@ -7,6 +7,7 @@ import base64
 import requests
 from header_photo_data import HEADER_PHOTO_B64
 from streamlit_lottie import st_lottie
+import sqlite3
 
 # ==========================================
 # 1. SETTING HALAMAN & INJEKSI CSS PREMIUM
@@ -241,96 +242,26 @@ def clean_destination(dest, kpi_type):
         return dest_str.split(',')[0].strip()
 
 # FIX 3: Tambahin parameter get_mtime buat memecahkan masalah cache yang nyangkut
-def get_file_mtimes(file_list):
-    mtimes = []
-    for f in file_list:
-        if isinstance(f, str) and os.path.exists(f):
-            mtimes.append(os.path.getmtime(f))
-        elif hasattr(f, 'size'):
-            mtimes.append(f.size)
-    return tuple(mtimes)
-
 @st.cache_data
-def load_unified_data(file_list, _mtimes):
-    all_raw = []
-    all_rata2 = []
-    load_errors = []  
+def load_data_from_db():
+    conn = sqlite3.connect('dashboard_sco.db', check_same_thread=False)
+    
+    # Tarik transaksi utama
+    df_master = pd.read_sql_query("SELECT * FROM transaksi", conn)
+    if not df_master.empty:
+        df_master['Date'] = pd.to_datetime(df_master['Date'])
+        
+    # Tarik data hari kerja
+    try:
+        df_rata2 = pd.read_sql_query("SELECT * FROM hari_kerja", conn)
+    except:
+        df_rata2 = pd.DataFrame()
+        
+    conn.close()
+    return df_master, df_rata2
 
-    for f in file_list:
-        fname_for_error = f.name if hasattr(f, 'name') else os.path.basename(str(f))
-        try:
-            if hasattr(f, 'name'):
-                filename = f.name.lower()
-                xls_input = f
-            else:
-                filename = os.path.basename(f).lower()
-                xls_input = f
-            
-            if "cashless" in filename: kpi_type = "Cashless"
-            elif "kredit auto" in filename: kpi_type = "Kredit Auto"
-            elif "kredit manual" in filename: kpi_type = "Kredit Manual" 
-            elif "cash" in filename: kpi_type = "Cash"
-            else: kpi_type = "Cash"
-                
-            xls = pd.ExcelFile(xls_input)
-            
-            if "Raw Data" in xls.sheet_names:
-                df = pd.read_excel(xls, "Raw Data")
-                df_std = pd.DataFrame(index=df.index) 
-                df_std['KPI'] = kpi_type
-                
-                # Biar bisa ngetrack bulan data ini aslinya dari mana (untuk Fix Tab 3)
-                df_std['Source_File'] = filename
-                
-                col_sco = 'User id' if 'User id' in df.columns else ('User Id' if 'User Id' in df.columns else None)
-                df_std['SCO'] = df[col_sco] if col_sco else "UNKNOWN"
-                
-                col_date = 'Created date' if 'Created date' in df.columns else 'Date'
-                # FIX 2: Tambah dayfirst=True biar format Indo DD/MM/YYYY gak ketuker jadi format Bule
-                df_std['Date'] = pd.to_datetime(df[col_date], errors='coerce', dayfirst=True)
-                
-                col_rev = 'Cnote Amount' if 'Cnote Amount' in df.columns else 'Amount'
-                df_std['Revenue'] = pd.to_numeric(df[col_rev], errors='coerce').fillna(0)
-                
-                df_std['Weight'] = pd.to_numeric(df['Weight'] if 'Weight' in df.columns else 0, errors='coerce').fillna(0)
-
-                # FIX 4: Qty dihapus sesuai instruksi
-
-                if 'Insurance' in df.columns:
-                    df_std['Insurance'] = pd.to_numeric(df['Insurance'], errors='coerce').fillna(0)
-                else:
-                    df_std['Insurance'] = 0.0
-
-                col_srv = 'Service' if 'Service' in df.columns else ('Services' if 'Services' in df.columns else None)
-                df_std['Service'] = df[col_srv] if col_srv else "-"
-                
-                df_std['Customer'] = df['Shipper Name'].fillna("-") if 'Shipper Name' in df.columns else "-"
-                
-                df_std['Destination'] = df['Destination'].apply(lambda x: clean_destination(x, kpi_type)) if 'Destination' in df.columns else "-"
-                
-                if kpi_type == "Cashless":
-                    col_pay = 'Marketplace_Clean' if 'Marketplace_Clean' in df.columns else ('Marketplace' if 'Marketplace' in df.columns else None)
-                    df_std['Payment_Method'] = df[col_pay].fillna("Lainnya") if col_pay else "Lainnya"
-                elif kpi_type == "Cash":
-                    df_std['Payment_Method'] = df['Payment type'].fillna("Cash") if 'Payment type' in df.columns else "Cash"
-                else:
-                    df_std['Payment_Method'] = kpi_type
-                    
-                all_raw.append(df_std)
-            
-            if kpi_type == "Cash" and "Rata-Rata Hari Masuk" in xls.sheet_names:
-                df_r = pd.read_excel(xls, "Rata-Rata Hari Masuk")
-                # Tambahin info source file juga buat difilter nanti (Fix Tab 3)
-                df_r['Source_File'] = filename 
-                all_rata2.append(df_r)
-
-        except Exception as e:
-            load_errors.append(f"{fname_for_error}: {e}")
-
-    df_master = pd.concat(all_raw, ignore_index=True) if all_raw else pd.DataFrame()
-    df_rata2_master = pd.concat(all_rata2, ignore_index=True) if all_rata2 else pd.DataFrame()
-
-    return df_master, df_rata2_master, load_errors
+# Panggil datanya 
+df_global, df_rata2_global = load_data_from_db()
 
 def format_rupiah(val):
     return f"Rp {val:,.0f}".replace(",", ".")
@@ -350,90 +281,49 @@ def style_top_row(df):
 # SIDEBAR KIRI: SISTEM HYBRID & GAMBAR
 # ==========================================
 with st.sidebar:
-    # 1. Gambar Logo Asli aja yang dipake (Animasi rusak dicabut biar bersih)
     st.image("https://cdn-icons-png.flaticon.com/512/3063/3063822.png", width=100)
 
-st.sidebar.header("📁 Data Source (Hybrid)")
-st.sidebar.markdown("<p style='font-size:0.9rem; color:#a8b2d1;'>Sistem akan otomatis baca dari server/GitHub. Upload file hanya jika ingin menimpa data sementara.</p>", unsafe_allow_html=True)
-
-uploaded_files = st.sidebar.file_uploader("Upload File Bypass (.xlsx)", type=['xlsx'], accept_multiple_files=True)
-
-if uploaded_files:
-    active_files = uploaded_files
-else:
-    list_local = glob.glob("*.xlsx")
-    list_local = [f for f in list_local if not f.startswith("~$")]
-    active_files = list_local
-
-if not active_files:
-    if lottie_empty: st_lottie(lottie_empty, height=200, key="empty_file")
-    st.error("⚠️ Data server kosong dan belum ada file yang di-upload.")
-    st.stop()
-
-# Terapin fix cache di pemanggilan data
-df_global, _, global_load_errors = load_unified_data(active_files, get_file_mtimes(active_files))
+# Panggil data dari SQL
+df_global, df_rata2_active = load_data_from_db()
 
 if df_global.empty:
-    st.error("Gagal membaca data. Pastikan sheet 'Raw Data' ada di dalam file.")
+    st.error("⚠️ Data Master kosong. Pastikan file dashboard_sco.db sudah di-upload ke GitHub.")
     st.stop()
-
-if global_load_errors:
-    with st.sidebar.expander(f"⚠️ {len(global_load_errors)} file gagal dibaca", expanded=False):
-        for err in global_load_errors:
-            st.caption(f"❌ {err}")
 
 st.sidebar.markdown("---")
 st.sidebar.header("🔍 Filter Analytics")
 
+# Ambil list KPI otomatis dari database
 available_kpis = df_global['KPI'].unique().tolist()
 selected_kpi = st.sidebar.selectbox("📊 Pilih Pilar KPI:", options=available_kpis)
 
-list_file_kpi = []
-for f in active_files:
-    fname = f.name.lower() if hasattr(f, 'name') else os.path.basename(f).lower()
-    if selected_kpi == "Cash" and "cashless" not in fname and "kredit" not in fname:
-        list_file_kpi.append(f)
-    elif selected_kpi == "Cashless" and "cashless" in fname:
-        list_file_kpi.append(f)
-    elif selected_kpi not in ["Cash", "Cashless"] and selected_kpi.lower() in fname:
-        list_file_kpi.append(f)
-
-if not list_file_kpi:
-    st.sidebar.warning(f"File untuk KPI {selected_kpi} tidak ditemukan.")
-    st.stop()
-
-# Langsung Bypass Filter (Terapin fix cache)
-selected_files = list_file_kpi
-df_active, df_rata2_active, _ = load_unified_data(selected_files, get_file_mtimes(selected_files))
-
-# --- SABUK PENGAMAN (FIX ERROR) ---
-if df_active.empty:
-    st.warning("⚠️ Data kosong! Gagal memproses file untuk KPI yang dipilih.")
-    st.stop()
-# ----------------------------------
-
-df_active = df_active.dropna(subset=['Date', 'SCO'])
+# Filter global berdasarkan KPI
+df_active = df_global.dropna(subset=['Date', 'SCO'])
 df_active['Date_Only'] = df_active['Date'].dt.date
-
 df_kpi_only = df_active[df_active['KPI'] == selected_kpi]
 
 if df_kpi_only.empty:
-    st.warning("Data untuk KPI ini kosong pada file yang dipilih.")
+    st.warning(f"Data untuk KPI {selected_kpi} kosong.")
     st.stop()
 
+# Rentang Tanggal
 min_date = df_kpi_only['Date_Only'].min()
 max_date = df_kpi_only['Date_Only'].max()
 date_range = st.sidebar.date_input("📅 Rentang Tanggal", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+
 if len(date_range) == 2:
     start_date, end_date = date_range
 else:
     start_date = end_date = date_range[0]
     
+# Filter SCO
 list_sco = df_kpi_only['SCO'].dropna().unique().tolist()
 selected_sco = st.sidebar.multiselect("👨‍💼 Pilih SCO (Bisa >1):", options=list_sco, default=[], help="Kosongkan buat nampilin semua")
 
+# Eksekusi Filter
 mask_date = (df_kpi_only['Date_Only'] >= start_date) & (df_kpi_only['Date_Only'] <= end_date)
 df_filtered = df_kpi_only[mask_date].copy()
+
 if selected_sco:
     df_filtered = df_filtered[df_filtered['SCO'].isin(selected_sco)]
 
@@ -441,7 +331,6 @@ st.sidebar.markdown("---")
 st.sidebar.header("📥 Export Data")
 csv_data = df_filtered.to_csv(index=False).encode('utf-8')
 st.sidebar.download_button(label=f"Download Rekap {selected_kpi} (CSV)", data=csv_data, file_name=f"Data_Export_{selected_kpi}.csv", mime='text/csv')
-
 # ==========================================
 # TAMPILAN DASHBOARD (HERO HEADER BANNER)
 # ==========================================
