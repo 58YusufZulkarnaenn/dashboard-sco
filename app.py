@@ -395,6 +395,10 @@ with tab1:
     best_user_rev = rekap_user.iloc[0] if not rekap_user.empty else 0
     
     sco_aktif = df_filtered['SCO'].nunique()
+    resi_per_sco = df_filtered['SCO'].value_counts()
+    best_resi_user = resi_per_sco.index[0] if not resi_per_sco.empty else "-"
+    best_resi_count = int(resi_per_sco.iloc[0]) if not resi_per_sco.empty else 0
+    best_user_resi = int((df_filtered['SCO'] == best_user).sum()) if best_user != "-" else 0
     srv_top = df_filtered['Service'].mode()[0] if not df_filtered['Service'].empty else "-"
     pay_top = df_filtered['Payment_Method'].mode()[0] if not df_filtered['Payment_Method'].empty else "-"
     
@@ -421,8 +425,8 @@ with tab1:
     
     st.markdown("<br>", unsafe_allow_html=True)
     c5, c6, c7, c8 = st.columns(4)
-    c5.metric("🏆 BEST SCO", f"{best_user}", delta=f"{total_resi} Resi Dikelola")
-    c6.metric("👥 SCO AKTIF", f"{sco_aktif} Orang")
+    c5.metric("🏆 BEST SCO (REVENUE)", f"{best_user}", delta=f"{best_user_resi} Resi Dikelola")
+    c6.metric("🥇 BEST SCO (RESI)", f"{best_resi_user}", delta=f"{best_resi_count} Resi Terbanyak")
     c7.metric("🚚 LAYANAN TERLARIS", srv_top)
     c8.metric("💳 METODE FAVORIT", pay_top)
 
