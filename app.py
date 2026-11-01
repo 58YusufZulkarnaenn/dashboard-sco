@@ -395,7 +395,9 @@ with tab1:
     best_user_rev = rekap_user.iloc[0] if not rekap_user.empty else 0
     
     sco_aktif = df_filtered['SCO'].nunique()
-    resi_per_sco = df_filtered['SCO'].value_counts()
+    # Tie-breaker: kalau jumlah resi sama, yang revenue-nya lebih tinggi menang
+    resi_per_sco = (df_filtered.groupby('SCO').agg(Resi=('Revenue', 'size'), Rev=('Revenue', 'sum'))
+                    .sort_values(['Resi', 'Rev'], ascending=False)['Resi'])
     best_resi_user = resi_per_sco.index[0] if not resi_per_sco.empty else "-"
     best_resi_count = int(resi_per_sco.iloc[0]) if not resi_per_sco.empty else 0
     best_user_resi = int((df_filtered['SCO'] == best_user).sum()) if best_user != "-" else 0
