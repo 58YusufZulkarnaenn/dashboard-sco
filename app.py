@@ -4,6 +4,7 @@ import altair as alt
 import glob
 import os
 import base64
+import html
 import requests
 from header_photo_data import HEADER_PHOTO_B64
 from streamlit_lottie import st_lottie
@@ -68,7 +69,6 @@ def add_custom_css():
     }
     [data-testid="stMetricLabel"] { color: #a8b2d1 !important; font-weight: 600; font-size: 1.1rem; }
     [data-testid="stMetricValue"] { color: #64ffda !important; font-weight: 800; }
-    [data-testid="stMetricDelta"] svg { fill: #00e676; }
     
     .stTabs [data-baseweb="tab-list"] {
         gap: 10px; background-color: rgba(255, 255, 255, 0.05);
@@ -278,6 +278,237 @@ def style_top_row(df):
     return df.style.apply(_highlight, axis=1)
 
 # ==========================================
+# FITUR: ANALISA FAKTOR REVENUE (PERBANDINGAN 2 PERIODE)
+# ==========================================
+WARNA_TURUN = "#ff6b6b"
+
+def rupiah_selisih(val):
+    tanda = "+" if val > 0.5 else "-" if val < -0.5 else ""
+    return f"{tanda}{format_rupiah(abs(val))}"
+
+def teks_persen(lama, baru):
+    if lama == 0:
+        return "n/a"
+    return f"{(baru - lama) / abs(lama) * 100:+.1f}%"
+
+def ringkas_periode(df):
+    resi = len(df)
+    rev = float(df['Revenue'].sum())
+    return {'resi': resi, 'rev': rev, 'avg': rev / resi if resi else 0}
+
+def banding_dimensi(df_a, df_b, kolom):
+    """Revenue & resi per item (SCO/Customer/dll) untuk periode A vs B."""
+    def _agg(df, label):
+        kunci = df[kolom].fillna('-').astype(str).str.strip().replace({'': '-', '-': '(Tidak diisi)'})
+        return df.groupby(kunci)['Revenue'].agg(['sum', 'size']).rename(columns={'sum': f'Rev {label}', 'size': f'Resi {label}'})
+    hasil = _agg(df_a, 'A').join(_agg(df_b, 'B'), how='outer').fillna(0)
+    hasil['Selisih Rev'] = hasil['Rev B'] - hasil['Rev A']
+    hasil['Selisih Resi'] = hasil['Resi B'] - hasil['Resi A']
+    hasil.index.name = kolom
+    return hasil.reset_index().sort_values('Selisih Rev')
+
+def tampil_dimensi(df_a, df_b, kolom, label):
+    data = banding_dimensi(df_a, df_b, kolom)
+
+    if kolom == 'Customer':
+        def _status(r):
+            if r['Customer'] == '(Tidak diisi)': return '-'
+            if r['Resi A'] == 0: return '🆕 Baru di B'
+            if r['Resi B'] == 0: return '⚠️ Tidak order di B'
+            if r['Selisih Rev'] > 0: return '📈 Naik'
+            if r['Selisih Rev'] < 0: return '📉 Turun'
+            return 'Tetap'
+        data['Status'] = data.apply(_status, axis=1)
+
+    # Grafik: 10 item dengan perubahan revenue paling besar
+    top = data[data['Selisih Rev'] != 0]
+    top = top.loc[top['Selisih Rev'].abs().sort_values(ascending=False).head(10).index]
+    if top.empty:
+        st.info(f"Tidak ada perubahan revenue per {label}.")
+    else:
+        chart = alt.Chart(top).mark_bar(cornerRadius=4).encode(
+            x=alt.X('Selisih Rev:Q', title='Selisih Revenue B - A (Rp)'),
+            y=alt.Y(f'{kolom}:N', sort=alt.SortField('Selisih Rev', order='descending'), title=label),
+            color=alt.condition(alt.datum['Selisih Rev'] > 0, alt.value(BRAND_TEAL), alt.value(WARNA_TURUN)),
+            tooltip=[f'{kolom}:N', 'Rev A:Q', 'Rev B:Q', 'Selisih Rev:Q', 'Resi A:Q', 'Resi B:Q']
+        ).properties(height=max(150, 34 * len(top)))
+        st.altair_chart(chart, use_container_width=True)
+
+    tabel = data.copy().rename(columns={kolom: label})
+    for c in ['Resi A', 'Resi B', 'Selisih Resi']:
+        tabel[c] = tabel[c].astype(int)
+    for c in ['Rev A', 'Rev B']:
+        tabel[c] = tabel[c].apply(format_rupiah)
+    tabel['Selisih Rev'] = tabel['Selisih Rev'].apply(rupiah_selisih)
+    st.caption("Tabel diurutkan dari penurunan terbesar ke kenaikan terbesar.")
+    st.dataframe(tabel, use_container_width=True, hide_index=True)
+
+def render_analisa_faktor(df_sumber):
+    st.header("🔍 Analisa Faktor Revenue SCO")
+    st.markdown("<p style='color:#a8b2d1 !important;'>Bandingkan dua periode untuk gabungan semua KPI (Cash + Cashless). Halaman ini <b>tidak terpengaruh filter Sidebar</b>.</p>", unsafe_allow_html=True)
+
+    df_all = df_sumber.dropna(subset=['Date', 'SCO']).copy()
+    if df_all.empty:
+        st.info("Belum ada data dengan Date dan SCO yang terisi.")
+        return
+    df_all['Date_Only'] = df_all['Date'].dt.date
+    data_min, data_max = df_all['Date_Only'].min(), df_all['Date_Only'].max()
+
+    # Default: B = bulan terakhir di data, A = tanggal yang sama di bulan sebelumnya
+    akhir = pd.Timestamp(data_max)
+    awal_b = akhir.replace(day=1)
+    awal_a = awal_b - pd.DateOffset(months=1)
+    akhir_a = awal_b - pd.Timedelta(days=1)
+    if not akhir.is_month_end:
+        akhir_a = awal_a.replace(day=min(akhir.day, akhir_a.day))
+    def_a = (awal_a.date(), akhir_a.date())
+    def_b = (awal_b.date(), data_max)
+    batas_min = min(data_min, def_a[0])
+    batas_max = max(data_max, def_b[1])
+
+    f1, f2 = st.columns(2)
+    periode_a = f1.date_input("📅 Periode A (pembanding)", value=def_a, min_value=batas_min, max_value=batas_max, key="faktor_periode_a")
+    periode_b = f2.date_input("📅 Periode B (yang dianalisa)", value=def_b, min_value=batas_min, max_value=batas_max, key="faktor_periode_b")
+    pilih_sco = st.multiselect("👨‍💼 Filter SCO (kosongkan = semua)", options=sorted(df_all['SCO'].astype(str).unique()), key="faktor_sco")
+
+    if len(periode_a) != 2 or len(periode_b) != 2:
+        st.info("Pilih tanggal awal **dan** tanggal akhir untuk kedua periode. Untuk 1 hari saja, klik tanggal yang sama dua kali.")
+        return
+
+    if pilih_sco:
+        df_all = df_all[df_all['SCO'].astype(str).isin(pilih_sco)]
+
+    (a1, a2), (b1, b2) = periode_a, periode_b
+    df_a = df_all[(df_all['Date_Only'] >= a1) & (df_all['Date_Only'] <= a2)]
+    df_b = df_all[(df_all['Date_Only'] >= b1) & (df_all['Date_Only'] <= b2)]
+    st.caption(f"A: {a1:%d-%m-%Y} s/d {a2:%d-%m-%Y}  |  B: {b1:%d-%m-%Y} s/d {b2:%d-%m-%Y}")
+
+    if df_a.empty and df_b.empty:
+        st.warning("⚠️ Tidak ada data di kedua periode.")
+        return
+
+    # ---------- Peringatan kualitas perbandingan ----------
+    hari_a, hari_b = (a2 - a1).days + 1, (b2 - b1).days + 1
+    kpi_data = df_sumber['KPI'].dropna().unique().tolist()
+    daftar_kpi = ['Cash', 'Cashless'] + sorted(k for k in kpi_data if k not in ('Cash', 'Cashless'))
+
+    if a1 <= b2 and b1 <= a2:
+        st.warning("⚠️ Periode A dan B saling tumpang tindih, jadi sebagian transaksi dihitung di keduanya.")
+    if hari_a != hari_b:
+        st.warning(f"⚠️ Panjang periode beda (A = {hari_a} hari, B = {hari_b} hari). Cek juga rata-rata per hari di bawah.")
+    for kpi in daftar_kpi:
+        for nama, df_p in (('A', df_a), ('B', df_b)):
+            if not (df_p['KPI'] == kpi).any():
+                st.warning(f"⚠️ Tidak ada data **{kpi}** di Periode {nama} (sesuai filter). Pastikan datanya memang kosong, bukan belum di-upload.")
+    terakhir = df_sumber.dropna(subset=['Date']).groupby('KPI')['Date'].max()
+    st.caption("🗓️ Tanggal data terakhir di database: " + " · ".join(f"{k}: {v:%d-%m-%Y}" for k, v in terakhir.items()))
+
+    # ---------- Ringkasan Cash vs Cashless ----------
+    tot_a, tot_b = ringkas_periode(df_a), ringkas_periode(df_b)
+    per_kpi = {k: (ringkas_periode(df_a[df_a['KPI'] == k]), ringkas_periode(df_b[df_b['KPI'] == k])) for k in daftar_kpi}
+    baris = list(per_kpi.items()) + [('Total', (tot_a, tot_b))]
+
+    st.subheader("💰 Ringkasan Periode B (dibanding A)")
+    for nama, (a, b) in baris:
+        k1, k2 = st.columns(2)
+        k1.metric(f"💰 REVENUE {nama.upper()}", format_rupiah(b['rev']), delta=f"{rupiah_selisih(b['rev'] - a['rev'])} ({teks_persen(a['rev'], b['rev'])})")
+        k2.metric(f"📦 RESI {nama.upper()}", f"{b['resi']:,}".replace(",", ".") + " Resi", delta=f"{b['resi'] - a['resi']:+} resi ({teks_persen(a['resi'], b['resi'])})")
+
+    tabel_ringkas = pd.DataFrame([{
+        'KPI': nama,
+        'Revenue A': format_rupiah(a['rev']), 'Revenue B': format_rupiah(b['rev']),
+        'Selisih Revenue': rupiah_selisih(b['rev'] - a['rev']),
+        'Resi A': a['resi'], 'Resi B': b['resi'], 'Selisih Resi': b['resi'] - a['resi'],
+        'Rata2/Resi A': format_rupiah(a['avg']), 'Rata2/Resi B': format_rupiah(b['avg']),
+    } for nama, (a, b) in baris])
+    st.dataframe(tabel_ringkas, use_container_width=True, hide_index=True)
+
+    st.markdown("**📆 Rata-rata per hari kalender**")
+    h1, h2 = st.columns(2)
+    rph_a, rph_b = tot_a['rev'] / hari_a, tot_b['rev'] / hari_b
+    cph_a, cph_b = tot_a['resi'] / hari_a, tot_b['resi'] / hari_b
+    h1.metric("REVENUE / HARI", format_rupiah(rph_b), delta=f"{rupiah_selisih(rph_b - rph_a)} ({teks_persen(rph_a, rph_b)})")
+    h2.metric("RESI / HARI", f"{cph_b:,.1f}", delta=f"{cph_b - cph_a:+.1f} ({teks_persen(cph_a, cph_b)})")
+    st.caption(f"Hari yang ada transaksinya: A = {df_a['Date_Only'].nunique()} dari {hari_a} hari, B = {df_b['Date_Only'].nunique()} dari {hari_b} hari.")
+
+    # ---------- Dekomposisi: jumlah resi vs nilai per resi ----------
+    st.markdown("---")
+    st.subheader("🧮 Kenapa Revenue Berubah?")
+    selisih = tot_b['rev'] - tot_a['rev']
+    bisa_dipecah = tot_a['resi'] > 0 and tot_b['resi'] > 0
+    efek_resi = (tot_b['resi'] - tot_a['resi']) * tot_a['avg']
+    efek_nilai = (tot_b['avg'] - tot_a['avg']) * tot_b['resi']
+
+    if bisa_dipecah:
+        d1, d2, d3 = st.columns(3)
+        d1.metric("📦 EFEK JUMLAH RESI", rupiah_selisih(efek_resi))
+        d2.metric("🏷️ EFEK NILAI PER RESI", rupiah_selisih(efek_nilai))
+        d3.metric("Σ TOTAL SELISIH", rupiah_selisih(selisih))
+
+        df_efek = pd.DataFrame({'Faktor': ['Jumlah Resi', 'Nilai per Resi'], 'Dampak': [efek_resi, efek_nilai]})
+        chart_efek = alt.Chart(df_efek).mark_bar(cornerRadius=4).encode(
+            x=alt.X('Dampak:Q', title='Dampak ke Revenue (Rp)'), y=alt.Y('Faktor:N', title=None),
+            color=alt.condition(alt.datum.Dampak > 0, alt.value(BRAND_TEAL), alt.value(WARNA_TURUN)),
+            tooltip=['Faktor', 'Dampak']
+        ).properties(height=140)
+        st.altair_chart(chart_efek, use_container_width=True)
+        st.caption("Efek jumlah resi = (Resi B - Resi A) × rata-rata per resi A. Efek nilai per resi = (rata-rata B - rata-rata A) × Resi B. "
+                   "Nilai per resi gabungan juga dipengaruhi perubahan porsi Cash vs Cashless, layanan, berat, dan tujuan.")
+        if 'Weight' in df_all.columns:
+            berat_a = pd.to_numeric(df_a['Weight'], errors='coerce').mean()
+            berat_b = pd.to_numeric(df_b['Weight'], errors='coerce').mean()
+            if pd.notna(berat_a) and pd.notna(berat_b):
+                st.markdown(f"⚖️ Rata-rata berat per resi: **{berat_a:,.2f} Kg → {berat_b:,.2f} Kg** ({teks_persen(berat_a, berat_b)})")
+    else:
+        st.info("Pemecahan faktor butuh transaksi di kedua periode.")
+
+    # ---------- Kesimpulan otomatis ----------
+    poin = []
+    if abs(selisih) < 0.5:
+        poin.append(f"Total revenue <b>tetap</b> di {format_rupiah(tot_b['rev'])}.")
+    else:
+        arah = "naik" if selisih > 0 else "turun"
+        persen = f" ({teks_persen(tot_a['rev'], tot_b['rev'])})" if tot_a['rev'] else ""
+        poin.append(f"Total revenue <b>{arah} {format_rupiah(abs(selisih))}</b>{persen}, dari {format_rupiah(tot_a['rev'])} ke {format_rupiah(tot_b['rev'])}.")
+
+    if bisa_dipecah and abs(selisih) >= 0.5:
+        searah = lambda x: x * selisih > 0
+        faktor = [('jumlah resi', efek_resi), ('nilai rata-rata per resi', efek_nilai)]
+        utama = max((f for f in faktor if searah(f[1])), key=lambda f: abs(f[1]))
+        lain = next(f for f in faktor if f[0] != utama[0])
+        kalimat = f"Faktor utama: perubahan <b>{utama[0]}</b> (dampak {rupiah_selisih(utama[1])})."
+        if abs(lain[1]) >= 0.5:
+            peran = "ikut mendorong ke arah yang sama" if searah(lain[1]) else "menahan sebagian perubahan"
+            kalimat += f" Perubahan {lain[0]} {peran} ({rupiah_selisih(lain[1])})."
+        poin.append(kalimat)
+
+    if abs(selisih) >= 0.5:
+        turun = selisih < 0
+        kata = "penurunan" if turun else "kenaikan"
+        for kolom, label in [('KPI', 'KPI'), ('SCO', 'SCO'), ('Customer', 'Customer'), ('Service', 'Layanan'), ('Destination', 'Destinasi'), ('Payment_Method', 'Metode bayar')]:
+            if kolom not in df_all.columns:
+                continue
+            data = banding_dimensi(df_a, df_b, kolom)
+            data = data[(data[kolom] != '(Tidak diisi)') & ((data['Selisih Rev'] < 0) if turun else (data['Selisih Rev'] > 0))]
+            if data.empty:
+                continue
+            juara = data.iloc[0] if turun else data.iloc[-1]
+            poin.append(f"{label} penyumbang {kata} terbesar: <b>{html.escape(str(juara[kolom]))}</b> ({rupiah_selisih(juara['Selisih Rev'])}, resi {int(juara['Selisih Resi']):+}).")
+
+    kelas = "insight-box insight-warning" if selisih < 0 else "insight-box"
+    isi = "".join(f"<li>{p}</li>" for p in poin)
+    st.markdown(f'<div class="{kelas}"><b>💡 Kesimpulan Otomatis</b><ul>{isi}</ul></div>', unsafe_allow_html=True)
+    st.caption("Ini menunjukkan bagian data yang menyumbang perubahan, bukan bukti sebab-akibat. Alasan di baliknya tetap perlu dicek di lapangan.")
+
+    # ---------- Rincian penyumbang ----------
+    st.markdown("---")
+    st.subheader("🔬 Rincian Penyumbang Selisih")
+    dimensi = [(k, l) for k, l in [('KPI', 'KPI'), ('SCO', 'SCO'), ('Customer', 'Customer'), ('Service', 'Layanan'), ('Destination', 'Destinasi'), ('Payment_Method', 'Metode Bayar')] if k in df_all.columns]
+    for sub_tab, (kolom, label) in zip(st.tabs([l for _, l in dimensi]), dimensi):
+        with sub_tab:
+            tampil_dimensi(df_a, df_b, kolom, label)
+
+# ==========================================
 # SIDEBAR KIRI: SISTEM HYBRID & GAMBAR
 # ==========================================
 with st.sidebar:
@@ -368,9 +599,11 @@ st.markdown("---")
 if df_filtered.empty:
     if lottie_empty: st_lottie(lottie_empty, height=250, key="empty_filtered")
     st.warning("⚠️ Data kosong pada rentang waktu atau SCO yang dipilih.")
+    st.markdown("---")
+    render_analisa_faktor(df_global)  # tetap bisa dipakai walau filter sidebar kosong
     st.stop()
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "📈 Dashboard Utama", 
     "🏆 Top Customer", 
     f"👨‍💼 Kinerja SCO", 
@@ -378,7 +611,8 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "💳 Metode Pembayaran & Layanan",
     "📍 Pemetaan Destinasi",
     f"🚀 Tren {selected_kpi}",
-    "🌐 Executive Summary"
+    "🌐 Executive Summary",
+    "🔍 Analisa Faktor Revenue"
 ])
 
 # ==========================================
@@ -1021,6 +1255,12 @@ with tab8:
         
     global_rekap.index = range(1, len(global_rekap) + 1)
     st.dataframe(style_top_row(global_rekap), use_container_width=True)
+
+# ==========================================
+# TAB 9: ANALISA FAKTOR REVENUE
+# ==========================================
+with tab9:
+    render_analisa_faktor(df_global)
 
 # ==========================================
 # FOOTER
